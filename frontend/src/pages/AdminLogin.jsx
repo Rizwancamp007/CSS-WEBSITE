@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react"; // Removed useEffect from imports
 import { motion } from "framer-motion";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext"; 
@@ -12,13 +12,11 @@ export default function AdminLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { login, user } = useAuth(); 
+  const { login } = useAuth(); // Removed 'user' to prevent the useEffect loop here
   const navigate = useNavigate();
 
-  // SESSION GUARD: Auto-redirect if node is already active
-  useEffect(() => {
-    if (user) navigate("/admin-dashboard");
-  }, [user, navigate]);
+  // IMPORTANT: We handle redirection inside handleSubmit success block 
+  // to ensure state synchronization is complete.
 
   /**
    * @section Authentication Sequence
@@ -40,7 +38,12 @@ export default function AdminLogin() {
 
       if (result.success) {
         toast.success("Identity Verified. Node Active.", { id: authToast });
-        navigate("/admin-dashboard"); 
+        
+        // Use replace: true to prevent back-button loops
+        // Small delay ensures localStorage and Auth State are settled
+        setTimeout(() => {
+          navigate("/admin-dashboard", { replace: true });
+        }, 100);
       } else {
         toast.error(result.message || "Unauthorized Access.", { id: authToast });
       }

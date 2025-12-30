@@ -8,7 +8,11 @@ const AuthContext = createContext();
  * Hardened for dual-collection verification and resilient session persistence.
  */
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
+  // PERSISTENCE FIX: Initialize user from localStorage to prevent "null" flicker on refresh
+  const [user, setUser] = useState(() => {
+    const savedUser = localStorage.getItem("user");
+    return savedUser ? JSON.parse(savedUser) : null;
+  });
   const [loading, setLoading] = useState(true);
 
   /**
@@ -22,7 +26,7 @@ export const AuthProvider = ({ children }) => {
 
   /**
    * @section Session Restoration
-   * FIXED: Added precise error handling to prevent "Panic Logouts" during server lag.
+   * Verifies the local JWT against the backend authority on boot.
    */
   useEffect(() => {
     const verifySession = async () => {
@@ -37,7 +41,10 @@ export const AuthProvider = ({ children }) => {
         const res = await getAdminProfile();
         // SYNCED: Accessing res.data.data to match backend return structure
         if (res.data && res.data.success && res.data.data) {
-          setUser(res.data.data);
+          const freshUser = res.data.data;
+          setUser(freshUser);
+          // Update local storage with fresh data (permissions/names)
+          localStorage.setItem("user", JSON.stringify(freshUser));
         } else {
           logout();
         }
@@ -67,9 +74,13 @@ export const AuthProvider = ({ children }) => {
       });
 
       if (res.data && res.data.success) {
-        localStorage.setItem("token", res.data.token);
-        // SYNCED: Backend login returns user at root of data
-        setUser(res.data.user); 
+        const { token, user: userData } = res.data;
+        
+        // PERSISTENCE FIX: Save both Token and User object
+        localStorage.setItem("token", token);
+        localStorage.setItem("user", JSON.stringify(userData));
+        
+        setUser(userData); 
         return { success: true };
       }
       return { success: false, message: res.data.message || "Handshake refused." };
@@ -83,12 +94,14 @@ export const AuthProvider = ({ children }) => {
 
   /**
    * @helper Permission Guard (The Warden)
+   * Hardened to handle both 'email' and 'gmail' fields.
    */
   const hasPermission = useCallback((permissionKey) => {
     if (!user) return false;
 
     // LEVEL 0 BYPASS (Master Admin)
     const MASTER = (import.meta.env.VITE_MASTER_ADMIN_EMAIL || "css@gmail.com").toLowerCase().trim();
+    // Handles 'email' (Admin) and 'gmail' (Board Member)
     const currentEmail = (user.email || user.gmail || "").toLowerCase().trim();
     
     if (currentEmail === MASTER) return true; 
