@@ -7,77 +7,74 @@ const rateLimit = require("express-rate-limit");
 const compression = require("compression");
 const connectDB = require("./config/db");
 
-/**
- * @description Core System Node
- * Initializes the express engine and establishes the database connection.
- */
 const app = express();
 
 // Establish Database Uplink
 connectDB();
 
 // ==========================================
-// 1. DATA PARSING & CORS (CRITICAL UPLINK)
+// 1. DATA PARSING & CORS (REFINED)
 // ==========================================
 
 /**
- * CORS PROTOCOL: Hardened for Admin Uplink
- * Explicitly allows the Vite frontend (localhost:5173) to transmit 
- * Authorization headers for JWT-based administrative sessions.
+ * CORS PROTOCOL: Institutional Grade
+ * Automatically sanitizes the FRONTEND_URL to prevent trailing slash errors
+ * which are the #1 cause of "No Access-Control-Allow-Origin" failures.
  */
+const allowedOrigins = [
+    "http://localhost:5173", 
+    "http://localhost:3000",
+    // Cleanup logic: Removes trailing slash if present in the environment variable
+    process.env.FRONTEND_URL?.replace(/\/$/, "") 
+].filter(Boolean);
+
 app.use(cors({
-    origin: [
-        "http://localhost:5173", 
-        "http://localhost:3000", 
-        process.env.FRONTEND_URL
-    ].filter(Boolean),
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            console.error(`🛑 CORS REJECTION: Origin [${origin}] not authorized.`);
+            callback(new Error("CORS Protocol Violation: Origin Not Authorized"));
+        }
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"] 
 }));
 
-// Payload Guard: Prevents buffer overflow attacks by limiting incoming JSON/Form data
+// Payload Guard
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
 // ==========================================
-// 2. SECURITY & PERFORMANCE MIDDLEWARE
+// 2. SECURITY & PERFORMANCE
 // ==========================================
 
-// Helmet: Hardens HTTP headers to mitigate common web vulnerabilities
-app.use(helmet({
-    contentSecurityPolicy: false, // Set to false to support external assets (Cloudinary/Images)
-}));
-
-// MongoSanitize: Automatically scrubs incoming requests to prevent NoSQL Injection
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(mongoSanitize());
-
-// Compression: Minimizes transmission payload size for faster UI rendering
 app.use(compression());
 
-// Global Rate Limiting: Prevents DDoS/Spamming across general API nodes
 const globalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 Minute Window
-    max: 500, // Balanced for data-heavy dashboard loading
-    message: { success: false, message: "Traffic Threshold Exceeded. Please wait." }
+    windowMs: 15 * 60 * 1000, 
+    max: 500, 
+    message: { success: false, message: "Traffic Threshold Exceeded." }
 });
 app.use("/api/", globalLimiter);
 
-// Login Limiter: Specialized brute-force shielding for the Admin gateway
 const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 15, // Maximum 15 attempts per window
-    message: { success: false, message: "Security Protocol: Too many attempts. Access locked for 15m." }
+    max: 15, 
+    message: { success: false, message: "Security Protocol: Brute-force Shield Active." }
 });
 
 // ==========================================
 // 3. ROUTE UPLINKS
 // ==========================================
 
-// Apply brute-force protection specifically to the login route
 app.use("/api/admin/login", loginLimiter); 
 
-// Mainframe API Routing Tree
 app.use("/api/admin", require("./routes/adminRoutes"));
 app.use("/api/events", require("./routes/eventRoutes"));
 app.use("/api/announcements", require("./routes/announcementRoutes"));
@@ -89,11 +86,11 @@ app.use("/api/register", require("./routes/registrationRoutes"));
 // 4. FAILSAFE ERROR HANDLING
 // ==========================================
 
-/**
- * Global Exception Handler: Prevents server crashes and masks 
- * technical stack traces from end-users.
- */
 app.use((err, req, res, next) => {
+    // Catch CORS specific errors to provide cleaner feedback
+    if (err.message === "CORS Protocol Violation: Origin Not Authorized") {
+        return res.status(403).json({ success: false, message: err.message });
+    }
     console.error(`❌ CRITICAL EXCEPTION: ${err.stack}`);
     res.status(err.status || 500).json({ 
         success: false, 
@@ -109,7 +106,7 @@ app.listen(PORT, () => {
     Port: ${PORT}
     Mode: ${process.env.NODE_ENV || 'development'}
     Security: IRONCLAD
-    CORS: AUTHORIZED FOR VITE
+    CORS: AUTHORIZED FOR VITE & VERCEL
     ==================================
     `);
 });
