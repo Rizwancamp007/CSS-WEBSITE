@@ -43,19 +43,17 @@ function ScrollToTop() {
 
 /**
  * @section AUTHENTICATION GUARD
- * High-clearance gatekeeper for the administrative grid.
  */
 const ProtectedRoute = ({ children, requireSuperAdmin = false }) => {
   const { user, loading } = useAuth();
   const location = useLocation();
 
-  if (loading) return null; // Prevent flicker during session handshake
+  if (loading) return null; 
 
   if (!user) {
     return <Navigate to="/admin" state={{ from: location }} replace />;
   }
 
-  // SuperAdmin Logic: Check against master identity
   const MASTER_EMAIL = import.meta.env.VITE_MASTER_ADMIN_EMAIL || "css@gmail.com";
   if (requireSuperAdmin && user.email?.toLowerCase() !== MASTER_EMAIL.toLowerCase()) {
     return <Navigate to="/admin-dashboard" replace />;
@@ -70,16 +68,13 @@ const ProtectedRoute = ({ children, requireSuperAdmin = false }) => {
 function AppContent() {
   const location = useLocation();
   
-  // Grid detection for UI suppression
   const isAdminPath = location.pathname.startsWith("/admin") || 
-                     location.pathname === "/all-registrations";
-
-  const isLoginPage = location.pathname === "/admin";
+                      location.pathname === "/all-registrations" ||
+                      location.pathname === "/setup-board-password"; // Added to avoid Navbar overlap
 
   return (
     <div className={`min-h-screen ${isAdminPath ? 'bg-[#020617]' : 'grid-bg'}`}>
       
-      {/* Suppress standard UI during administrative operations */}
       {!isAdminPath && <Navbar />}
       
       <AnimatePresence mode="wait">
@@ -93,7 +88,9 @@ function AppContent() {
           <Route path="/announcements" element={<Announcements />} />
           <Route path="/register/:eventId?" element={<Register />} />
           <Route path="/membership" element={<Membership />} />
-          <Route path="/activate" element={<ActivateAccount />} />
+
+          {/* FIXED: Path synchronized with your invitation link */}
+          <Route path="/setup-board-password" element={<ActivateAccount />} />
 
           {/* --- ADMIN GATEWAY --- */}
           <Route path="/admin" element={<AdminLogin />} />
