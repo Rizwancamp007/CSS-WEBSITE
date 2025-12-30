@@ -2,6 +2,7 @@ import axios from "axios";
 
 /**
  * @description Standardized Mainframe Uplink Configuration
+ * Hardened for environment-aware routing.
  */
 const API = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "http://localhost:3001/api",
@@ -12,6 +13,7 @@ const API = axios.create({
 
 /**
  * @section Request Interceptor (Auth Key Binder)
+ * Automatically binds JWT to every administrative request.
  */
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
@@ -54,6 +56,8 @@ export const fetchAdminEvents = () => API.get("/events/admin/all");
 export const createEvent = (data) => API.post("/events", data);
 export const updateEvent = (id, data) => API.put(`/events/${id}`, data);
 export const deleteEvent = (id) => API.delete(`/events/${id}`);
+// RESTORED: Archive Protocol for Events
+export const toggleArchiveEvent = (id) => API.patch(`/events/archive/${id}`);
 
 // ==========================================
 // 3. BROADCASTS (ANNOUNCEMENTS)

@@ -5,7 +5,8 @@ const {
     getEvents, 
     getAdminEvents, 
     updateEvent, 
-    deleteEvent 
+    deleteEvent,
+    toggleArchiveEvent // RESTORED: Archive controller link
 } = require("../controllers/eventController");
 const { protect, authorize } = require("../middleware/authMiddleware");
 
@@ -29,8 +30,7 @@ router.post("/",
     createEvent
 );
 
-// Retrieve full mission ledger: GET /api/events/admin/all
-// PRODUCTION SYNC: Placed above /:id to prevent route clashing
+// Retrieve full mission ledger (including archived): GET /api/events/admin/all
 router.get("/admin/all", 
     protect, 
     authorize("canManageEvents"), 
@@ -42,6 +42,17 @@ router.put("/:id",
     protect, 
     authorize("canManageEvents"), 
     updateEvent
+);
+
+/**
+ * @section Mission Lifecycle Control
+ * PATCH /api/events/archive/:id
+ * RESTORED: Toggle mission visibility without data destruction.
+ */
+router.patch("/archive/:id",
+    protect,
+    authorize("canManageEvents"),
+    toggleArchiveEvent
 );
 
 // Permanent removal of mission data: DELETE /api/events/:id

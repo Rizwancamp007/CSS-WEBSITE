@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 
 /**
  * @description Mission Control: Event Schema
- * Manages society activities with automated status transitions and capacity safeguards.
+ * Hardened with automated lifecycle management and capacity safeguards.
  */
 const eventSchema = new mongoose.Schema({
   title: { 
@@ -22,7 +22,6 @@ const eventSchema = new mongoose.Schema({
     required: true 
   },
 
-  // Visual asset link - Standardized for cloud/local storage
   image: { 
     type: String, 
     default: "https://placehold.co/600x400/020617/FFD700?text=GCU+CSS+EVENT" 
@@ -43,7 +42,7 @@ const eventSchema = new mongoose.Schema({
   // CAPACITY & ENROLLMENT MANAGEMENT
   maxParticipants: { 
     type: Number, 
-    default: 0 // 0 represents unlimited uplink slots
+    default: 0 // 0 represents unlimited slots
   },
 
   registrationCount: { 
@@ -58,13 +57,13 @@ const eventSchema = new mongoose.Schema({
   },
 
   // LIFECYCLE MANAGEMENT
+  // Restored: Crucial for Admin Archiving vs Public Visibility
   isArchived: { 
     type: Boolean, 
     default: false 
   },
 
-  // AUTHOR IDENTITY (Polymorphic Refined)
-  // Ensures populate() works for both Master Admin and Executive Board members
+  // AUTHOR IDENTITY
   createdBy: { 
     type: mongoose.Schema.Types.ObjectId,
     required: true,
@@ -92,17 +91,23 @@ eventSchema.virtual('isFull').get(function() {
 
 /**
  * @section Automation Middleware
+ * Hardened for lifecycle synchronization.
  */
 eventSchema.pre('save', function(next) {
   const now = new Date();
   
-  // Auto-transition to 'completed' if the date has passed
-  if (this.date < now && this.status !== 'cancelled') {
+  // 1. Auto-transition to 'completed' if the date has passed
+  if (this.date < now && this.status === 'upcoming') {
     this.status = 'completed';
   }
 
-  // Force close registration if capacity is reached
+  // 2. Force close registration if capacity is reached
   if (this.maxParticipants > 0 && this.registrationCount >= this.maxParticipants) {
+    this.registrationOpen = false;
+  }
+
+  // 3. Security: If mission is archived, registration must be locked
+  if (this.isArchived) {
     this.registrationOpen = false;
   }
   
@@ -110,7 +115,7 @@ eventSchema.pre('save', function(next) {
 });
 
 /**
- * @section Performance & Intelligence Indexing
+ * @section Performance Indexing
  */
 eventSchema.index({ date: 1, status: 1 });
 eventSchema.index({ isArchived: 1, createdAt: -1 });
