@@ -2,12 +2,11 @@ import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { toast } from "react-hot-toast";
-import { API_URL } from "../App"; 
+import { setupBoardPassword } from "../api"; // FIXED: Use centralized API
 
 /**
  * @description The Activation Node
  * Purpose: Finalizes board member enrollment by setting access credentials.
- * Hardened with token verification and input normalization.
  */
 export default function ActivateAccount() {
   const [formData, setFormData] = useState({ 
@@ -26,7 +25,10 @@ export default function ActivateAccount() {
 
   useEffect(() => {
     if (!token) {
-      toast.error("SECURITY ALERT: No activation token detected. Use the official link.");
+      toast.error("SECURITY ALERT: No activation token detected.", {
+        icon: '⚠️',
+        duration: 6000
+      });
     }
   }, [token]);
 
@@ -37,7 +39,7 @@ export default function ActivateAccount() {
     if (formData.password !== formData.confirmPassword) {
       return toast.error("Handshake Failed: Passcodes do not match.");
     }
-    if (formData.password.length < 8) { // Hardened to 8 characters
+    if (formData.password.length < 8) {
       return toast.error("SECURITY RISK: Password must be at least 8 characters.");
     }
     if (!token) {
@@ -50,30 +52,23 @@ export default function ActivateAccount() {
     try {
       /**
        * BACKEND HANDSHAKE:
-       * Synchronized with AdminController -> setupAdminPassword
+       * Uses centralized Axios logic for CORS and header integrity.
        */
-      const response = await fetch(`${API_URL}/admin/setup-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rollNo: formData.rollNo.toUpperCase().trim(),
-          gmail: formData.gmail.toLowerCase().trim(),
-          password: formData.password,
-          token: token 
-        }),
+      const res = await setupBoardPassword({
+        rollNo: formData.rollNo.toUpperCase().trim(),
+        gmail: formData.gmail.toLowerCase().trim(),
+        password: formData.password,
+        token: token 
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
+      if (res.data && res.data.success) {
         toast.success("Identity Verified. Welcome to the Executive Board.", { id: loadToast });
-        // Temporal delay to allow the user to read the confirmation
-        setTimeout(() => navigate("/admin"), 2500);
-      } else {
-        toast.error(data.message || "Activation logic failure.", { id: loadToast });
+        // Temporal delay for system synchronization feel
+        setTimeout(() => navigate("/admin"), 2000);
       }
     } catch (error) {
-      toast.error("COMMUNICATION ERROR: Mainframe Bridge Lost.", { id: loadToast });
+      const message = error.response?.data?.message || "Activation logic failure.";
+      toast.error(`ERROR: ${message}`, { id: loadToast });
     } finally {
       setLoading(false);
     }
@@ -101,12 +96,10 @@ export default function ActivateAccount() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Identity Verification Fields */}
           <div className="space-y-1">
             <label className="text-[10px] font-black uppercase text-slate-600 tracking-widest ml-1">Verified Roll No</label>
             <input 
               required
-              name="rollNo"
               value={formData.rollNo}
               onChange={(e) => setFormData({...formData, rollNo: e.target.value})}
               className="w-full bg-slate-950/80 border border-slate-800 p-4 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none transition-all placeholder:text-slate-800" 
@@ -119,7 +112,6 @@ export default function ActivateAccount() {
             <input 
               required
               type="email"
-              name="gmail"
               value={formData.gmail}
               onChange={(e) => setFormData({...formData, gmail: e.target.value})}
               className="w-full bg-slate-950/80 border border-slate-800 p-4 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none transition-all placeholder:text-slate-800" 
@@ -129,13 +121,11 @@ export default function ActivateAccount() {
 
           <div className="h-px bg-slate-800/40 my-6" />
 
-          {/* Credential Setting Fields */}
           <div className="space-y-1">
             <label className="text-[10px] font-black uppercase text-slate-600 tracking-widest ml-1">Secret Access Key</label>
             <input 
               required
               type="password"
-              name="password"
               value={formData.password}
               onChange={(e) => setFormData({...formData, password: e.target.value})}
               className="w-full bg-slate-950/80 border border-slate-800 p-4 rounded-2xl text-xs font-bold text-white focus:border-[#FFD700]/40 outline-none transition-all placeholder:text-slate-800" 
@@ -148,7 +138,6 @@ export default function ActivateAccount() {
             <input 
               required
               type="password"
-              name="confirmPassword"
               value={formData.confirmPassword}
               onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
               className="w-full bg-slate-950/80 border border-slate-800 p-4 rounded-2xl text-xs font-bold text-white focus:border-[#FFD700]/40 outline-none transition-all placeholder:text-slate-800" 

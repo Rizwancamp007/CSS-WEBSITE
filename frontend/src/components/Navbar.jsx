@@ -1,29 +1,26 @@
 import React, { useState, useEffect } from "react";
 import { NavLink, useLocation, Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAuth } from "../context/AuthContext"; // FIXED: Integrated Centralized Auth
+import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
 
 /**
  * @description The Command Strip (Navbar)
- * Hardened for real-time auth state synchronization and responsive navigation.
- * Features conditional rendering for Board Members and Master Admin.
+ * Integrated with Environment-aware Master Admin checks and centralized Auth.
  */
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const { user, logout } = useAuth(); // FIXED: Using centralized state
+  const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Auth Status Handshake
   const isLoggedIn = !!user;
-  const isMasterAdmin = user?.email === "css@gmail.com";
+  
+  // LIVE FIX: Syncing Master Admin check with Environment Variables
+  const MASTER_EMAIL = import.meta.env.VITE_MASTER_ADMIN_EMAIL || "css@gmail.com";
+  const isMasterAdmin = user?.email?.toLowerCase() === MASTER_EMAIL.toLowerCase();
 
-  /**
-   * @section Termination Sequence
-   * Standardized logout protocol with UX feedback.
-   */
   const handleLogout = () => {
     logout();
     toast.success("Uplink Terminated. Logged out.", {
@@ -55,7 +52,7 @@ export default function Navbar() {
       initial={{ y: -100 }}
       animate={{ y: 0 }}
       transition={{ duration: 0.6, ease: "circOut" }}
-      className={`fixed top-0 left-0 w-full z-50 transition-all duration-500 ${
+      className={`fixed top-0 left-0 w-full z-[100] transition-all duration-500 ${
         scrolled || mobileOpen
           ? "bg-[#020617]/90 backdrop-blur-xl border-b border-slate-800 shadow-2xl py-3"
           : "bg-transparent border-b border-transparent py-5"
@@ -68,19 +65,19 @@ export default function Navbar() {
           <div className="relative">
             <div className="absolute inset-0 bg-blue-500 blur-lg opacity-20 group-hover:opacity-60 transition-opacity duration-500" />
             <motion.div 
-              whileHover={{ scale: 1.05, borderColor: 'rgba(255,215,0,0.5)' }}
+              whileHover={{ scale: 1.05 }}
               className="relative w-10 h-10 sm:w-12 sm:h-12 rounded-full overflow-hidden border-2 border-white/10 shadow-2xl transition-all duration-300"
             >
               <img
                 src="/logo.jpg"
                 alt="CS Society Logo"
                 className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                onError={(e) => { e.target.src = "https://via.placeholder.com/50?text=CSS"; }}
+                onError={(e) => { e.target.src = "https://placehold.co/100x100/020617/FFD700?text=CSS"; }}
               />
             </motion.div>
           </div>
           <div className="flex flex-col leading-tight">
-            <span className="text-white font-black text-lg tracking-tighter uppercase group-hover:text-[#FFD700] transition-colors duration-300">
+            <span className="text-white font-black text-lg tracking-tighter uppercase group-hover:text-[#FFD700] transition-colors">
               CS Society
             </span>
             <span className="text-[#FFD700] text-[9px] font-black tracking-[0.3em] uppercase opacity-80">
@@ -89,7 +86,7 @@ export default function Navbar() {
           </div>
         </Link>
 
-        {/* DESKTOP FREQUENCIES (Navigation) */}
+        {/* DESKTOP NAV */}
         <div className="hidden md:flex items-center gap-1 bg-slate-950/40 border border-slate-800 p-1.5 rounded-full backdrop-blur-md">
           {navItems.map((item) => (
             <NavLink
@@ -121,18 +118,15 @@ export default function Navbar() {
         <div className="flex items-center gap-4 relative z-50">
           {isLoggedIn ? (
             <div className="hidden md:flex items-center gap-3">
-                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                  <Link
+                <Link
                    to="/admin-dashboard"
-                   className="px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] bg-slate-900 border border-slate-800 text-[#FFD700] hover:border-[#FFD700]/40 transition-all shadow-xl"
+                   className="px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] bg-slate-900 border border-slate-800 text-[#FFD700] hover:border-[#FFD700]/40 transition-all"
                  >
                    Dashboard
                  </Link>
-                </motion.div>
                 
-                {/* Level 0 Exclusive: Inquiry Inbox */}
                 {isMasterAdmin && (
-                  <Link to="/admin/messages" className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500 hover:text-white transition-all shadow-lg" title="Inquiry Inbox">
+                  <Link to="/admin/messages" className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500 hover:text-white transition-all" title="Inquiry Inbox">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
@@ -141,30 +135,23 @@ export default function Navbar() {
 
                 <button
                  onClick={handleLogout}
-                 className="p-2.5 rounded-xl bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition-all shadow-lg"
+                 className="p-2.5 rounded-xl bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition-all"
                  title="Terminate Uplink"
                >
-                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                  </svg>
                </button>
             </div>
           ) : (
-            <motion.div 
-              whileHover={{ scale: 1.05, boxShadow: '0 0 25px rgba(255,215,0,0.2)' }} 
-              whileTap={{ scale: 0.95 }}
-              className="hidden md:block"
+            <Link
+              to="/admin"
+              className="hidden md:block px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] bg-gradient-to-r from-[#FFD700] via-[#FDB931] to-[#FFA500] text-black shadow-2xl"
             >
-              <Link
-                to="/admin"
-                className="px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] bg-gradient-to-r from-[#FFD700] via-[#FDB931] to-[#FFA500] text-black shadow-2xl transition-all"
-              >
-                Admin Portal
-              </Link>
-            </motion.div>
+              Admin Portal
+            </Link>
           )}
 
-          {/* Mobile Comm Toggle (Hamburger) */}
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
             className="md:hidden p-2 text-[#FFD700] hover:bg-slate-800 rounded-lg transition-colors"
@@ -178,25 +165,23 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* MOBILE HUD (Menu) */}
+      {/* MOBILE HUD */}
       <AnimatePresence>
         {mobileOpen && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="md:hidden bg-[#020617] border-b border-slate-800 relative overflow-hidden"
+            className="md:hidden bg-[#020617] border-b border-slate-800 relative z-[99]"
           >
-            <div className="absolute inset-0 z-0 bg-[linear-gradient(to_right,#FFD70005_1px,transparent_1px),linear-gradient(to_bottom,#FFD70005_1px,transparent_1px)] bg-[size:2rem_2rem] pointer-events-none" />
-            
-            <div className="relative z-10 px-8 py-12 space-y-3">
+            <div className="px-8 py-12 space-y-3">
               {navItems.map((item) => (
                 <NavLink
                   key={item.link}
                   to={item.link}
                   className={({ isActive }) =>
                     `block text-sm font-black uppercase tracking-[0.3em] py-4 px-6 rounded-2xl transition-all ${
-                      isActive ? "bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-lg" : "text-slate-500 border border-transparent"
+                      isActive ? "bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-lg" : "text-slate-500"
                     }`
                   }
                 >
@@ -206,11 +191,11 @@ export default function Navbar() {
               <div className="h-px bg-slate-800 my-6 opacity-50" />
               {isLoggedIn ? (
                 <div className="flex flex-col gap-4">
-                  <Link to="/admin-dashboard" className="py-4 rounded-2xl bg-slate-900 border border-slate-800 text-[#FFD700] font-black uppercase tracking-widest text-[10px] text-center shadow-xl">Dashboard</Link>
-                  <button onClick={handleLogout} className="py-4 rounded-2xl bg-red-500/10 text-red-500 border border-red-500/20 font-black uppercase tracking-widest text-[10px] shadow-lg text-center">Terminate Uplink</button>
+                  <Link to="/admin-dashboard" className="py-4 rounded-2xl bg-slate-900 border border-slate-800 text-[#FFD700] font-black uppercase tracking-widest text-[10px] text-center">Dashboard</Link>
+                  <button onClick={handleLogout} className="py-4 rounded-2xl bg-red-500/10 text-red-500 border border-red-500/20 font-black uppercase tracking-widest text-[10px] text-center">Terminate Uplink</button>
                 </div>
               ) : (
-                <Link to="/admin" className="block w-full text-center py-5 rounded-2xl bg-gradient-to-r from-[#FFD700] via-[#FDB931] to-[#FFA500] text-black font-black uppercase tracking-[0.2em] text-[10px] shadow-2xl">Access Admin Portal</Link>
+                <Link to="/admin" className="block w-full text-center py-5 rounded-2xl bg-gradient-to-r from-[#FFD700] via-[#FDB931] to-[#FFA500] text-black font-black uppercase tracking-[0.2em] text-[10px]">Access Admin Portal</Link>
               )}
             </div>
           </motion.div>

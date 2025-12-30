@@ -2,18 +2,24 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { API_URL } from "../App"; 
+import { 
+  fetchAdminAnnouncements, 
+  createAnnouncement, 
+  updateAnnouncement, 
+  toggleArchiveAnnouncement, 
+  deleteAnnouncement as deleteApi 
+} from "../api"; // FIXED: Use centralized API
+import { useAuth } from "../context/AuthContext"; // FIXED: Use Auth Context
 
 /**
  * @description News Broadcaster (Admin Interface)
- * Hardened for announcement lifecycle management.
- * Features real-time state synchronization and dual-frequency data retrieval.
+ * Hardened for announcement lifecycle management with RBAC support.
  */
 export default function AdminAnnouncements() {
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [userPermissions, setUserPermissions] = useState(null);
+  const { hasPermission } = useAuth(); // FIXED: Secure permission check
   const [editId, setEditId] = useState(null); 
   
   const [formData, setFormData] = useState({
@@ -24,32 +30,16 @@ export default function AdminAnnouncements() {
   });
 
   const navigate = useNavigate();
-  const token = localStorage.getItem("token"); // Unified token key
 
   /**
    * @section Data Synchronization
-   * Fetches the full ledger (including archived nodes) via the Admin endpoint.
    */
-  const fetchAnnouncements = async () => {
+  const loadAnnouncements = async () => {
     try {
-      // Primary: High-Clearance Admin Endpoint
-      let res = await fetch(`${API_URL}/announcements/admin/all`, {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-
-      // Fallback: Public Frequency if Admin route fails
-      if (!res.ok) res = await fetch(`${API_URL}/announcements`);
-
-      const result = await res.json();
-      
-      // Extraction logic for the standardized { success, data } wrapper
-      const list = result.data || result.announcements || (Array.isArray(result) ? result : []);
+      const res = await fetchAdminAnnouncements();
+      // Handle the standardized { success: true, data: [...] } structure
+      const list = res.data?.data || [];
       setAnnouncements(list);
-      
-      // Permissions check for conditional rendering of the 'New Node' form
-      const savedUserData = JSON.parse(localStorage.getItem("user") || "{}");
-      setUserPermissions(savedUserData?.permissions);
-      
     } catch (error) {
       toast.error("Frequency Sync Failed: Inaccessible Registry.");
     } finally {
@@ -58,19 +48,14 @@ export default function AdminAnnouncements() {
   };
 
   useEffect(() => { 
-    if (!token) navigate("/admin");
-    else fetchAnnouncements(); 
-  }, [token, navigate]);
+    loadAnnouncements(); 
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  /**
-   * @section Edit Initialization
-   * Pre-populates the broadcast form with existing node data.
-   */
   const handleEdit = (item) => {
     setEditId(item._id);
     setFormData({
@@ -89,84 +74,57 @@ export default function AdminAnnouncements() {
 
   /**
    * @section Transmission Logic
-   * Handles both deployment (POST) and modification (PUT) of broadcast nodes.
    */
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
     const loadToast = toast.loading(editId ? "Updating Node..." : "Broadcasting...");
     
-    const url = editId ? `${API_URL}/announcements/${editId}` : `${API_URL}/announcements`;
-    
     try {
-      const response = await fetch(url, {
-        method: editId ? "PUT" : "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(formData),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-          throw new Error(data.message || "Transmission Refused by Mainframe.");
+      if (editId) {
+        await updateAnnouncement(editId, formData);
+        toast.success("Entry Modified.", { id: loadToast });
+      } else {
+        await createAnnouncement(formData);
+        toast.success("Broadcast Deployed.", { id: loadToast });
       }
-
-      toast.success(editId ? "Entry Modified." : "Broadcast Deployed.", { id: loadToast });
       resetForm();
-      fetchAnnouncements(); 
+      loadAnnouncements(); 
     } catch (error) {
-      toast.error(error.message, { id: loadToast });
+      toast.error(error.response?.data?.message || "Transmission Refused.", { id: loadToast });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  /**
-   * @section Archive Protocol
-   * Toggles the visibility of the announcement on the public feed.
-   */
   const toggleArchive = async (id) => {
     const loadToast = toast.loading("Syncing status...");
     try {
-      const res = await fetch(`${API_URL}/announcements/archive/${id}`, {
-        method: "PATCH",
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-
-      if (res.ok) {
-        toast.success("Status Toggled.", { id: loadToast });
-        fetchAnnouncements();
-      } else {
-        throw new Error();
-      }
+      await toggleArchiveAnnouncement(id);
+      toast.success("Status Toggled.", { id: loadToast });
+      loadAnnouncements();
     } catch (error) {
-      toast.error("Handshake Failed. Verify Archive Route.", { id: loadToast });
+      toast.error("Handshake Failed.", { id: loadToast });
     }
   };
 
-  const deleteAnnouncement = async (id) => {
+  const handleDelete = async (id) => {
     if(!window.confirm("PERMANENT PURGE? This cannot be undone.")) return;
     try {
-      const response = await fetch(`${API_URL}/announcements/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.ok) {
-        toast.success("Record Purged.");
-        setAnnouncements(prev => prev.filter((a) => a._id !== id));
-      }
+      await deleteApi(id);
+      toast.success("Record Purged.");
+      setAnnouncements(prev => prev.filter((a) => a._id !== id));
     } catch (error) {
       toast.error("Purge Sequence Failed.");
     }
   };
 
+  // CHECK: If user doesn't have permission, the control panel won't even exist
+  const canManage = hasPermission("canManageAnnouncements");
+
   return (
     <div className="min-h-screen bg-[#020617] text-white overflow-x-hidden relative">
-      {/* Background Polish */}
-      <div className="fixed inset-0 z-0 w-full h-full bg-[linear-gradient(to_right,#FFD70008_1px,transparent_1px),linear-gradient(to_bottom,#FFD70008_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
+      <div className="fixed inset-0 z-0 w-full h-full bg-[linear-gradient(to_right,#FFD70008_1px,transparent_1px),linear-gradient(to_bottom,#FFD70008_1px,transparent_1px)] bg-[size:4rem_4rem] pointer-events-none" />
       
       <div className="relative z-10 px-6 pt-32 pb-24 max-w-7xl mx-auto">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-16 gap-6">
@@ -177,7 +135,7 @@ export default function AdminAnnouncements() {
         <div className="grid lg:grid-cols-12 gap-12">
           {/* CONTROL PANEL */}
           <div className="lg:col-span-4">
-            {userPermissions?.canManageAnnouncements && (
+            {canManage && (
               <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="bg-slate-900/40 backdrop-blur-3xl border border-slate-800 p-8 rounded-[2.5rem] shadow-2xl sticky top-32 overflow-hidden">
                 <div className="absolute top-0 left-0 w-full h-1 bg-blue-600/50" />
                 <div className="flex justify-between items-center mb-8">
@@ -196,7 +154,7 @@ export default function AdminAnnouncements() {
                     <input type="date" name="date" value={formData.date} onChange={handleChange} className="w-full px-4 py-4 rounded-2xl bg-slate-950 border border-slate-800 text-[10px] font-bold outline-none text-slate-400" required />
                   </div>
                   <textarea name="description" value={formData.description} onChange={handleChange} placeholder="BROADCAST CONTENT..." rows="4" className="w-full px-5 py-4 rounded-2xl bg-slate-950 border border-slate-800 text-xs font-bold focus:border-blue-500/50 outline-none resize-none placeholder:text-slate-800" required />
-                  <button type="submit" disabled={isSubmitting} className={`w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] transition-all shadow-lg ${editId ? 'bg-[#FFD700] text-black hover:bg-yellow-500' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
+                  <button type="submit" disabled={isSubmitting} className={`w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] transition-all shadow-lg ${editId ? 'bg-[#FFD700] text-black' : 'bg-blue-600 text-white'}`}>
                     {isSubmitting ? "TRANSMITTING..." : editId ? "COMMIT CHANGES" : "INITIALIZE BROADCAST"}
                   </button>
                 </form>
@@ -219,13 +177,13 @@ export default function AdminAnnouncements() {
                     <p className="text-slate-500 text-sm line-clamp-1 font-medium">{item.description}</p>
                   </div>
                   <div className="flex gap-2 ml-6">
-                    <button onClick={() => handleEdit(item)} className="p-3 rounded-2xl bg-blue-500/10 text-blue-400 hover:bg-blue-600 hover:text-white transition-all shadow-lg" title="Edit Node">
+                    <button onClick={() => handleEdit(item)} className="p-3 rounded-2xl bg-blue-500/10 text-blue-400 hover:bg-blue-600 hover:text-white transition-all shadow-lg">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                     </button>
-                    <button onClick={() => toggleArchive(item._id)} className="p-3 rounded-2xl bg-slate-800 text-slate-400 hover:text-[#FFD700] transition-all shadow-lg" title={item.isArchived ? "Restore Node" : "Archive Node"}>
+                    <button onClick={() => toggleArchive(item._id)} className="p-3 rounded-2xl bg-slate-800 text-slate-400 hover:text-[#FFD700] transition-all">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
                     </button>
-                    <button onClick={() => deleteAnnouncement(item._id)} className="p-3 rounded-2xl bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-600 hover:text-white transition-all shadow-lg" title="Purge Node">
+                    <button onClick={() => handleDelete(item._id)} className="p-3 rounded-2xl bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-600 hover:text-white transition-all">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     </button>
                   </div>

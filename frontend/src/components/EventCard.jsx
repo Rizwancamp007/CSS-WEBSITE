@@ -4,27 +4,28 @@ import { Link } from "react-router-dom";
 
 /**
  * @description Mission Profile Card
- * Hardened for real-time capacity tracking and institutional aesthetics.
+ * Synchronized with backend capacity safeguards and manual registration toggles.
  */
 export default function EventCard({
-  id, // NEW: Required for dynamic routing
+  id,
   title,
   date,
   description,
   photo, 
   isPast = false,
   registrationCount = 0,
-  maxParticipants = 0
+  maxParticipants = 0,
+  registrationOpen = true // NEW: Supports manual admin closure
 }) {
   
-  // Normalizing Asset Source
+  // Normalizing Asset Source with Production Fallback
   const imageSrc = photo && photo.trim() !== "" ? photo : "/assets/images/placeholder.jpg";
   
   /**
-   * @section Logic Protocol: Capacity Check
-   * Determines if the mission uplink is still available based on backend counts.
+   * @section Logic Protocol: Capacity & Status Check
    */
   const isFull = maxParticipants > 0 && registrationCount >= maxParticipants;
+  const isRegistrationLocked = !registrationOpen || isFull;
 
   return (
     <motion.article
@@ -49,13 +50,13 @@ export default function EventCard({
           loading="lazy"
           onError={(e) => {
             e.target.onerror = null; 
-            e.target.src = "https://via.placeholder.com/400x200?text=Node+Asset+Missing"; 
+            e.target.src = "https://placehold.co/600x400/020617/FFD700?text=Asset+Offline"; 
           }}
         />
 
         <div className="absolute inset-0 bg-gradient-to-t from-[#020617] via-transparent to-transparent opacity-90" />
 
-        {/* Date Badge: Institutional Frequency */}
+        {/* Date Badge */}
         {date && (
           <div
             className={`absolute top-5 right-5 flex items-center gap-2 px-4 py-1.5 rounded-full backdrop-blur-md border shadow-2xl z-20 ${
@@ -71,14 +72,18 @@ export default function EventCard({
         )}
         
         {/* Capacity Indicator: Live Uplink Status */}
-        {!isPast && maxParticipants > 0 && (
+        {!isPast && (
             <div className="absolute bottom-4 left-6 z-20">
                 <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-md border ${
-                  isFull 
+                  isRegistrationLocked 
                   ? 'bg-red-500/10 border-red-500/30 text-red-400' 
                   : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                 }`}>
-                    {isFull ? "Node Capacity Reached" : `Uplinks: ${registrationCount} / ${maxParticipants}`}
+                    {isFull 
+                      ? "Capacity Reached" 
+                      : !registrationOpen 
+                      ? "Registrations Closed" 
+                      : `Uplinks: ${registrationCount} / ${maxParticipants > 0 ? maxParticipants : '∞'}`}
                 </span>
             </div>
         )}
@@ -108,16 +113,16 @@ export default function EventCard({
             >
               Mission Completed
             </button>
-          ) : isFull ? (
+          ) : isRegistrationLocked ? (
             <button
               disabled
               className="px-6 py-2.5 rounded-xl bg-red-900/20 text-red-500 text-[10px] font-black uppercase tracking-widest border border-red-900/30 cursor-not-allowed"
             >
-              Slots Depleted
+              {isFull ? "Slots Depleted" : "Entry Suspended"}
             </button>
           ) : (
             <Link
-              to={`/register/${id}`} // FIXED: Dynamically links to specific mission registration
+              to={`/register/${id}`}
               className="relative overflow-hidden px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FFA500] text-black text-[10px] font-black uppercase tracking-[0.15em] shadow-xl hover:shadow-yellow-500/30 transition-all duration-300 active:scale-95"
             >
               Initiate Enrollment

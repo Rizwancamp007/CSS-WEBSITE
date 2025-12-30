@@ -1,14 +1,15 @@
 import { useState, useEffect } from "react";
+import { useParams } from "react-router-dom"; // NEW: For auto-selecting event
 import { motion, AnimatePresence } from "framer-motion";
 import toast from 'react-hot-toast';
-import { API_URL } from "../App"; 
+import { fetchEvents, registerForEvent } from "../api"; // FIXED: Use centralized API
 
 /**
  * @description Secure Enrollment Terminal (Register Page)
- * Purpose: Participant data ingestion for specific society missions.
- * Hardened with real-time capacity syncing and institutional grid aesthetics.
+ * Hardened with auto-selection logic and real-time mission synchronization.
  */
 export default function Register() {
+  const { eventId: preSelectedId } = useParams(); // URL Parameter Extraction
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -16,8 +17,7 @@ export default function Register() {
     phoneNumber: "",
     department: "",
     semester: "",
-    eventId: "", // Sending the MongoDB _id
-    message: ""
+    eventId: preSelectedId || "", 
   });
 
   const [eventsList, setEventsList] = useState([]);
@@ -26,26 +26,23 @@ export default function Register() {
 
   /**
    * @section Mission Frequency Sync
-   * Pulls only the 'upcoming' missions from the public ledger.
    */
   useEffect(() => {
-    const fetchEvents = async () => {
+    const loadActiveMissions = async () => {
       try {
-        const res = await fetch(`${API_URL}/events`);
-        const json = await res.json();
+        const res = await fetchEvents();
+        const list = res.data?.data || [];
         
-        // Extraction logic for { success, data }
-        const list = json.data || (Array.isArray(json) ? json : []);
-        
-        // Protocol: Only display missions currently accepting uplinks
-        setEventsList(list.filter(ev => ev.status === "upcoming"));
+        // Protocol: Only display upcoming missions that are manually open
+        const activeMissions = list.filter(ev => ev.status === "upcoming" && ev.registrationOpen);
+        setEventsList(activeMissions);
       } catch (err) {
         console.error("MISSION_SYNC_FAILURE: Frequency unstable.");
       } finally {
         setLoading(false);
       }
     };
-    fetchEvents();
+    loadActiveMissions();
   }, []);
 
   const handleChange = (e) => {
@@ -54,12 +51,10 @@ export default function Register() {
 
   /**
    * @section Enrollment Protocol
-   * Broadcasts participant identifiers to the secure registry node.
    */
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Transmission Integrity Check
     if (!formData.name || !formData.rollNo || !formData.email || !formData.eventId) {
         return toast.error("Essential identifiers (Name, Roll, Email, Mission) missing.");
     }
@@ -70,37 +65,27 @@ export default function Register() {
     try {
       /**
        * UPLINK SYNCHRONIZATION:
-       * Consumes the hardened registration endpoint established in Phase 20.
+       * Handles capacity validation and duplicate check at backend level.
        */
-      const response = await fetch(`${API_URL}/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: formData.name.trim(),
-          rollNo: formData.rollNo.toUpperCase().trim(),
-          email: formData.email.toLowerCase().trim(),
-          department: formData.department,
-          semester: formData.semester,
-          phoneNumber: formData.phoneNumber,
-          eventId: formData.eventId // Direct DB _id linkage
-        }),
-      });
+      const payload = {
+        ...formData,
+        rollNo: formData.rollNo.toUpperCase().trim(),
+        email: formData.email.toLowerCase().trim()
+      };
 
-      const data = await response.json();
+      const res = await registerForEvent(payload);
 
-      if (response.ok && data.success) {
+      if (res.data?.success) {
         toast.success("Mission Enrollment Confirmed!", { id: loadToast });
         setFormData({
           name: "", email: "", rollNo: "", phoneNumber: "",
-          department: "", semester: "", eventId: "", message: ""
+          department: "", semester: "", eventId: "",
         });
         window.scrollTo({ top: 0, behavior: 'smooth' });
-      } else {
-        // Displays backend validation errors (e.g., "Event Full" or "Duplicate Roll No")
-        toast.error(data.message || "Registration Protocol Refused.", { id: loadToast });
       }
     } catch (err) {
-      toast.error("COMMUNICATION_ERROR: Mainframe link interrupted.", { id: loadToast });
+      const msg = err.response?.data?.message || "Registration Protocol Refused.";
+      toast.error(msg, { id: loadToast });
     } finally {
       setIsSubmitting(false);
     }
@@ -136,32 +121,32 @@ export default function Register() {
             
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase tracking-widest text-slate-700 ml-2">Identify Name</label>
-              <input name="name" value={formData.name} onChange={handleChange} placeholder="FULL NAME" className="w-full bg-slate-950/80 border border-slate-800 p-5 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none transition-all placeholder:text-slate-900" required />
+              <input name="name" value={formData.name} onChange={handleChange} placeholder="FULL NAME" className="w-full bg-slate-950/80 border border-slate-800 p-5 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none transition-all" required />
             </div>
 
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase tracking-widest text-slate-700 ml-2">Node ID (Roll No)</label>
-              <input name="rollNo" value={formData.rollNo} onChange={handleChange} placeholder="0001-BSCS-24" className="w-full bg-slate-950/80 border border-slate-800 p-5 rounded-2xl text-xs font-black font-mono text-white focus:border-blue-500/50 outline-none transition-all uppercase placeholder:text-slate-900" required />
+              <input name="rollNo" value={formData.rollNo} onChange={handleChange} placeholder="0001-BSCS-24" className="w-full bg-slate-950/80 border border-slate-800 p-5 rounded-2xl text-xs font-black font-mono text-white focus:border-blue-500/50 outline-none transition-all uppercase" required />
             </div>
 
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase tracking-widest text-slate-700 ml-2">Comm-Link (Email)</label>
-              <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="ravian@gmail.com" className="w-full bg-slate-950/80 border border-slate-800 p-5 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none transition-all placeholder:text-slate-900" required />
+              <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="ravian@gmail.com" className="w-full bg-slate-950/80 border border-slate-800 p-5 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none transition-all" required />
             </div>
 
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase tracking-widest text-slate-700 ml-2">Signal Frequency (WhatsApp)</label>
-              <input name="phoneNumber" value={formData.phoneNumber} onChange={handleChange} placeholder="03XXXXXXXXX" className="w-full bg-slate-950/80 border border-slate-800 p-5 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none transition-all placeholder:text-slate-900" />
+              <input name="phoneNumber" value={formData.phoneNumber} onChange={handleChange} placeholder="03XXXXXXXXX" className="w-full bg-slate-950/80 border border-slate-800 p-5 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none transition-all" />
             </div>
 
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase tracking-widest text-slate-700 ml-2">Sector (Department)</label>
-              <input name="department" value={formData.department} onChange={handleChange} placeholder="COMPUTER SCIENCE" className="w-full bg-slate-950/80 border border-slate-800 p-5 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none transition-all placeholder:text-slate-900" />
+              <input name="department" value={formData.department} onChange={handleChange} placeholder="COMPUTER SCIENCE" className="w-full bg-slate-950/80 border border-slate-800 p-5 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none transition-all" />
             </div>
 
             <div className="space-y-1">
-              <label className="text-[9px] font-black uppercase tracking-widest text-slate-700 ml-2">Current Phase (Semester)</label>
-              <input name="semester" value={formData.semester} onChange={handleChange} placeholder="PHASE_04" className="w-full bg-slate-950/80 border border-slate-800 p-5 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none transition-all placeholder:text-slate-900" />
+              <label className="text-[9px] font-black uppercase tracking-widest text-slate-700 ml-2">Phase (Semester)</label>
+              <input name="semester" value={formData.semester} onChange={handleChange} placeholder="PHASE_04" className="w-full bg-slate-950/80 border border-slate-800 p-5 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none transition-all" />
             </div>
 
             <div className="md:col-span-2 space-y-1">
@@ -171,7 +156,7 @@ export default function Register() {
                   name="eventId" 
                   value={formData.eventId} 
                   onChange={handleChange} 
-                  className="w-full bg-slate-950/80 border border-slate-800 p-5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white focus:border-[#FFD700]/40 outline-none appearance-none cursor-pointer transition-all" 
+                  className="w-full bg-slate-950/80 border border-slate-800 p-5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white focus:border-[#FFD700]/40 outline-none appearance-none cursor-pointer" 
                   required
                 >
                   <option value="" className="bg-slate-950">-- CHOOSE ACTIVE MISSION --</option>
@@ -190,7 +175,7 @@ export default function Register() {
             <button 
                 type="submit" 
                 disabled={isSubmitting} 
-                className="md:col-span-2 py-6 rounded-2xl bg-gradient-to-r from-[#FFD700] via-[#FDB931] to-[#FFA500] text-black font-black uppercase tracking-[0.4em] text-[11px] shadow-3xl hover:brightness-110 hover:shadow-[0_0_30px_rgba(255,215,0,0.2)] active:scale-95 transition-all duration-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="md:col-span-2 py-6 rounded-2xl bg-gradient-to-r from-[#FFD700] via-[#FDB931] to-[#FFA500] text-black font-black uppercase tracking-[0.4em] text-[11px] shadow-3xl hover:brightness-110 active:scale-95 transition-all disabled:opacity-50"
             >
               {isSubmitting ? "ENCRYPTING_PAYLOAD..." : "INITIALIZE ENROLLMENT MISSION"}
             </button>

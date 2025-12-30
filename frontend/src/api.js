@@ -2,8 +2,6 @@ import axios from "axios";
 
 /**
  * @description Standardized Mainframe Uplink Configuration
- * Centralized Axios instance configured for high-security administrative 
- * communication. Base URL is dynamic based on environment configuration.
  */
 const API = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "http://localhost:3001/api",
@@ -14,13 +12,11 @@ const API = axios.create({
 
 /**
  * @section Request Interceptor (Auth Key Binder)
- * Automatically extracts the JWT from local storage and binds it to the 
- * Authorization header. Sanitizes the token to prevent transmission errors.
+ * Automatically binds JWT to every administrative request.
  */
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
-  if (token) {
-    // Standardize the Bearer string and remove any accidental whitespace
+  if (token && token !== "null") {
     config.headers.Authorization = `Bearer ${token.trim()}`;
   }
   return config;
@@ -30,21 +26,20 @@ API.interceptors.request.use((config) => {
 
 /**
  * @section Response Interceptor (Security Sentry)
- * Globally monitors incoming traffic for 401 (Unauthorized) or 403 (Forbidden) 
- * statuses. Triggers a local session wipe if the security context is lost.
+ * Globally monitors for session expiration or unauthorized access.
  */
 API.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Catch security-related failures (expired tokens or revoked access)
+    // Catch 401 (Expired) or 403 (Forbidden)
     if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-      // Wipe corrupted or expired credentials to prevent infinite redirect loops
+      // Clear credentials to prevent state corruption
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       
-      // Optional: Signal the application to return to the login frequency
+      // Redirect to login frequency if currently in admin territory
       if (window.location.pathname.startsWith('/admin')) {
-        window.location.href = "/admin"; 
+        window.location.href = "/admin/login"; 
       }
     }
     return Promise.reject(error);
@@ -81,9 +76,11 @@ export const deleteAnnouncement = (id) => API.delete(`/announcements/${id}`);
 // 4. PERSONNEL & AUTHORITY (MEMBERSHIPS)
 // ==========================================
 export const submitMembership = (data) => API.post("/memberships", data);
-export const setupBoardPassword = (data) => API.post("/memberships/setup-password", data);
+// SYNCED: Matches hardened backend activation path
+export const setupBoardPassword = (data) => API.post("/memberships/activate-board", data);
 export const fetchAllMemberships = () => API.get("/memberships/admin/all");
-export const syncPermissions = (id, data) => API.patch(`/admin/permissions/${id}`, data); 
+// SYNCED: Uses the membership routes permissions endpoint
+export const syncPermissions = (id, data) => API.patch(`/memberships/permissions/${id}`, data); 
 export const deleteMembership = (id) => API.delete(`/memberships/${id}`);
 
 // ==========================================
@@ -95,7 +92,16 @@ export const deleteRegistration = (id) => API.delete(`/register/${id}`);
 export const exportRegistrations = () => API.get("/register/export", { responseType: 'blob' });
 
 // ==========================================
-// 6. COMMUNICATIONS (INQUIRIES)
+// 6. TEAM MANAGEMENT
+// ==========================================
+export const fetchPublicTeam = () => API.get("/team");
+export const fetchAdminTeam = () => API.get("/team/admin/all");
+export const addTeamMember = (data) => API.post("/team", data);
+export const updateTeamMember = (id, data) => API.put(`/team/${id}`, data);
+export const toggleTeamStatus = (id) => API.patch(`/team/status/${id}`);
+
+// ==========================================
+// 7. COMMUNICATIONS (INQUIRIES)
 // ==========================================
 export const submitInquiry = (data) => API.post("/admin/messages/public", data);
 export const fetchInquiries = () => API.get("/admin/messages");

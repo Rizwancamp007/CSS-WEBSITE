@@ -12,47 +12,48 @@ const { protect, authorize } = require("../middleware/authMiddleware");
 
 /**
  * @section Public Access Protocol
- * Open frequency for students to receive the latest updates.
+ * Open frequency for students to receive active broadcasts.
  */
-// GET /api/announcements -> Fetches only active, unarchived broadcasts
+// GET /api/announcements
 router.get("/", getAnnouncements);
 
 
 /**
  * @section Administrative Command (Restricted)
- * All endpoints below require active session verification and 
- * specific [canManageAnnouncements] clearance.
+ * All endpoints below require Level 1 identity protection and 
+ * specific [canManageAnnouncements] RBAC clearance.
  */
 
-// Deployment of new broadcast mission
+// Deployment: POST /api/announcements
 router.post("/", 
     protect, 
     authorize("canManageAnnouncements"), 
     createAnnouncement
 );
 
-// Synchronization of existing broadcast parameters
-router.put("/:id", 
-    protect, 
-    authorize("canManageAnnouncements"), 
-    updateAnnouncement
-);
-
-// Toggle Archive status (Soft-delete protocol)
-router.patch("/archive/:id", 
-    protect, 
-    authorize("canManageAnnouncements"), 
-    archiveAnnouncement
-);
-
-// Retrieve full broadcast ledger (including archived nodes) for Dashboard management
+// Registry Access: GET /api/announcements/admin/all
+// PRODUCTION SYNC: Placed above /:id to prevent route clashing
 router.get("/admin/all", 
     protect, 
     authorize("canManageAnnouncements"), 
     getAdminAnnouncements
 );
 
-// Permanent wipe of broadcast node from mainframe
+// Synchronization: PUT /api/announcements/:id
+router.put("/:id", 
+    protect, 
+    authorize("canManageAnnouncements"), 
+    updateAnnouncement
+);
+
+// Archive Toggle: PATCH /api/announcements/archive/:id
+router.patch("/archive/:id", 
+    protect, 
+    authorize("canManageAnnouncements"), 
+    archiveAnnouncement
+);
+
+// Permanent Purge: DELETE /api/announcements/:id
 router.delete("/:id", 
     protect, 
     authorize("canManageAnnouncements"), 

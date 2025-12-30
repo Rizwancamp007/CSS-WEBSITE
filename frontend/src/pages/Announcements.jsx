@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
-import { API_URL } from "../App"; 
+import { fetchAnnouncements } from "../api"; // FIXED: Use centralized API uplink
 
 /**
  * @description Institutional Alerts (Public Feed)
- * Hardened for real-time broadcast synchronization.
- * Features categorical badge styling and automated archival filtering.
+ * Hardened for real-time broadcast synchronization and categorical badge styling.
  */
 export default function Announcements() {
   const [announcements, setAnnouncements] = useState([]);
@@ -15,19 +14,20 @@ export default function Announcements() {
 
   /**
    * @section Frequency Synchronization
-   * Fetches the public broadcast feed from the mainframe.
    */
   useEffect(() => {
-    const fetchAnnouncements = async () => {
+    const loadAnnouncements = async () => {
       try {
-        const response = await fetch(`${API_URL}/announcements`);
-        const result = await response.json();
+        const res = await fetchAnnouncements();
         
-        // Data Extraction: Supports both raw arrays and standardized wrappers
-        const list = result.data || (Array.isArray(result) ? result : []);
+        // Data Extraction: Supports standardized { success, data } wrapper
+        const list = res.data?.data || [];
         
-        // Security: Ensure archived nodes are filtered out of public view
-        setAnnouncements(list.filter(a => !a.isArchived));
+        // SECURITY: Strict public filtering (Archives remain hidden)
+        const publicFeed = list.filter(a => !a.isArchived);
+        
+        // Sort: Most recent transmissions first
+        setAnnouncements(publicFeed.sort((a, b) => new Date(b.date) - new Date(a.date)));
       } catch (error) {
         setError("UPLINK_FAILURE: Monitoring system suggests connection interference.");
       } finally {
@@ -35,7 +35,7 @@ export default function Announcements() {
       }
     };
 
-    fetchAnnouncements();
+    loadAnnouncements();
   }, []);
 
   const formatDate = (dateString) => {
@@ -49,11 +49,10 @@ export default function Announcements() {
 
   /**
    * @section Protocol Badge Styling
-   * Categorizes alerts by priority and type using the society's palette.
    */
   const getBadgeStyle = (type) => {
     switch (type?.toLowerCase()) {
-      case "notice": return "bg-red-500/10 text-red-400 border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]";
+      case "notice": return "bg-red-500/10 text-red-400 border-red-500/20";
       case "opportunity": return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
       case "result": return "bg-amber-500/10 text-amber-400 border-amber-500/20";
       case "update": return "bg-blue-500/10 text-blue-400 border-blue-500/20";
@@ -67,7 +66,7 @@ export default function Announcements() {
       {/* --- GRID INFRASTRUCTURE --- */}
       <div className="fixed inset-0 z-0 w-full h-full bg-[linear-gradient(to_right,#FFD70008_1px,transparent_1px),linear-gradient(to_bottom,#FFD70008_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
       
-      {/* Ambient Lighting Node */}
+      {/* Ambient Lighting Pulse */}
       <motion.div
         className="fixed top-[-10%] right-[-10%] w-[600px] h-[600px] rounded-full bg-blue-600/5 blur-[120px] pointer-events-none z-0"
         animate={{ scale: [1, 1.1, 1], opacity: [0.1, 0.2, 0.1] }}
@@ -89,8 +88,8 @@ export default function Announcements() {
             Institutional <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#FFD700] to-yellow-500">Alerts</span>
           </h1>
           <p className="text-slate-500 text-lg max-w-2xl mx-auto font-medium">
-            Departmental notices, hackathon results, and career opportunities 
-            synced directly from the GCU CS Board Command.
+            Departmental notices, result bulletins, and career opportunities 
+            synced directly from the Board Command.
           </p>
         </motion.div>
 
@@ -112,11 +111,10 @@ export default function Announcements() {
               <p className="text-slate-600 font-black uppercase tracking-[0.3em] text-[10px] italic">The broadcast frequency is currently silent.</p>
             </motion.div>
           ) : (
-            <AnimatePresence>
-              {announcements.map((item, index) => (
+            <AnimatePresence mode="popLayout">
+              {announcements.map((item) => (
                 <motion.article
-                  key={item._id || index}
-                  layout
+                  key={item._id}
                   initial={{ opacity: 0, x: -15 }}
                   animate={{ opacity: 1, x: 0 }}
                   className="group relative bg-slate-900/40 backdrop-blur-3xl rounded-[2.5rem] border border-slate-800 p-8 sm:p-10 transition-all duration-500 hover:border-blue-500/30 shadow-2xl overflow-hidden"
@@ -132,7 +130,7 @@ export default function Announcements() {
                         <div className="flex items-center gap-2">
                            <div className="w-1 h-1 rounded-full bg-slate-800"></div>
                            <span className="text-slate-600 text-[10px] font-mono font-bold tracking-widest">
-                             {formatDate(item.createdAt || item.date)}
+                             {formatDate(item.date)}
                            </span>
                         </div>
                       </div>
@@ -140,21 +138,10 @@ export default function Announcements() {
                       <h3 className="text-3xl font-black text-white group-hover:text-blue-400 transition-colors mb-4 uppercase tracking-tighter leading-tight italic">
                         {item.title}
                       </h3>
-                      <p className="text-slate-400 leading-relaxed font-medium text-base">
+                      <p className="text-slate-400 leading-relaxed font-medium text-base whitespace-pre-line">
                         {item.description}
                       </p>
                     </div>
-                    
-                    {item.link && (
-                      <a 
-                        href={item.link} 
-                        target="_blank" 
-                        rel="noreferrer"
-                        className="px-8 py-4 rounded-2xl bg-slate-950 border border-slate-800 text-white font-black uppercase tracking-[0.2em] text-[9px] hover:border-[#FFD700] hover:text-[#FFD700] transition-all shadow-xl active:scale-95 shrink-0"
-                      >
-                        ACCESS_PROTOCOL →
-                      </a>
-                    )}
                   </div>
                 </motion.article>
               ))}
@@ -171,7 +158,7 @@ export default function Announcements() {
         >
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500/30 to-transparent opacity-50" />
           <h3 className="text-4xl font-black text-white mb-4 uppercase tracking-tighter italic">Stay Synchronized</h3>
-          <p className="text-slate-500 mb-10 max-w-lg mx-auto font-medium">Join the elite ranks receiving direct alerts on results, technical workshops, and global career opportunities.</p>
+          <p className="text-slate-500 mb-10 max-w-lg mx-auto font-medium">Join the elite ranks receiving direct alerts on technical workshops and society activities.</p>
           
           <Link
             to="/membership"

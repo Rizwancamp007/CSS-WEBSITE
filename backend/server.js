@@ -9,6 +9,9 @@ const connectDB = require("./config/db");
 
 const app = express();
 
+// LIVE FIX: Trust Render/Vercel proxies for accurate IP/Rate-limiting
+app.set("trust proxy", 1);
+
 // Establish Database Uplink
 connectDB();
 
@@ -16,21 +19,14 @@ connectDB();
 // 1. DATA PARSING & CORS (REFINED)
 // ==========================================
 
-/**
- * CORS PROTOCOL: Institutional Grade
- * Automatically sanitizes the FRONTEND_URL to prevent trailing slash errors
- * which are the #1 cause of "No Access-Control-Allow-Origin" failures.
- */
 const allowedOrigins = [
     "http://localhost:5173", 
     "http://localhost:3000",
-    // Cleanup logic: Removes trailing slash if present in the environment variable
     process.env.FRONTEND_URL?.replace(/\/$/, "") 
 ].filter(Boolean);
 
 app.use(cors({
     origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
         if (allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
@@ -44,7 +40,6 @@ app.use(cors({
     allowedHeaders: ["Content-Type", "Authorization"] 
 }));
 
-// Payload Guard
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
@@ -73,6 +68,9 @@ const loginLimiter = rateLimit({
 // 3. ROUTE UPLINKS
 // ==========================================
 
+// Production Health Check (Used by Render to monitor uptime)
+app.get("/health", (req, res) => res.status(200).send("Mainframe Operational"));
+
 app.use("/api/admin/login", loginLimiter); 
 
 app.use("/api/admin", require("./routes/adminRoutes"));
@@ -87,7 +85,6 @@ app.use("/api/register", require("./routes/registrationRoutes"));
 // ==========================================
 
 app.use((err, req, res, next) => {
-    // Catch CORS specific errors to provide cleaner feedback
     if (err.message === "CORS Protocol Violation: Origin Not Authorized") {
         return res.status(403).json({ success: false, message: err.message });
     }
@@ -98,13 +95,13 @@ app.use((err, req, res, next) => {
     });
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 10000; // Render expects port 10000
 app.listen(PORT, () => {
     console.log(`
     🚀 CORE ONLINE | MAINFRAME ACTIVE
     ==================================
     Port: ${PORT}
-    Mode: ${process.env.NODE_ENV || 'development'}
+    Mode: ${process.env.NODE_ENV || 'production'}
     Security: IRONCLAD
     CORS: AUTHORIZED FOR VITE & VERCEL
     ==================================

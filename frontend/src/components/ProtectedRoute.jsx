@@ -4,8 +4,7 @@ import { useAuth } from '../context/AuthContext';
 
 /**
  * @description The Sentinel Gatekeeper
- * This high-level component intercepts unauthorized access attempts.
- * Hardened to support both general authentication and specific role clearance.
+ * Hardened to support general authentication, activation checks, and granular RBAC.
  */
 const ProtectedRoute = ({ children, requiredPermission = null }) => {
   const { user, loading, hasPermission } = useAuth();
@@ -13,8 +12,6 @@ const ProtectedRoute = ({ children, requiredPermission = null }) => {
 
   /**
    * @section Handshake Phase
-   * While the AuthContext is decrypting the JWT and verifying the node,
-   * we display the institutional pulse loader.
    */
   if (loading) {
     return (
@@ -31,24 +28,23 @@ const ProtectedRoute = ({ children, requiredPermission = null }) => {
   }
 
   /**
-   * @section Authentication Shield
-   * If no identity node is found in the current state, redirect to the login gateway.
-   * We preserve the 'from' location to allow 'Session Recovery' after login.
+   * @section Authentication & Activation Shield
+   * SECURITY UPDATE: Explicitly checks if the user is authenticated AND active.
+   * If a user is deactivated in the DB, this prevents access even with a valid token.
    */
-  if (!user) {
+  if (!user || (user.isActive === false)) {
     return <Navigate to="/admin" state={{ from: location }} replace />;
   }
 
   /**
    * @section Authorization Shield (Clearance Check)
-   * If a specific permission is required for this route, we verify it here.
-   * If the check fails, the user is redirected to the standard dashboard.
    */
   if (requiredPermission && !hasPermission(requiredPermission)) {
+    // If authenticated but lacks specific power, redirect to the safe zone (Dashboard)
     return <Navigate to="/admin-dashboard" replace />;
   }
 
-  // Authorization Successful: Grant access to the requested sector
+  // Identity Confirmed: Establish sector uplink
   return children;
 };
 

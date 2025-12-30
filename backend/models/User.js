@@ -3,7 +3,7 @@ const bcrypt = require("bcryptjs");
 
 /**
  * @description Public User Identity Schema (General Student Body)
- * Purposefully isolated from the Administrative (Admin/Membership) nodes.
+ * Purposefully isolated from Administrative nodes.
  * Enforces a fixed-role policy to prevent unauthorized privilege escalation.
  */
 const userSchema = new mongoose.Schema({
@@ -23,17 +23,15 @@ const userSchema = new mongoose.Schema({
   password: { 
     type: String, 
     required: true,
-    select: false // Hardened: Prevents password hash leakage in public queries
+    select: false // Hardened: Prevents password hash leakage
   },
 
   // HARDENED ROLE SEGREGATION
-  // This model is strictly for the student body. Clearance levels can 
-  // ONLY be granted via the Admin or Membership models.
   role: { 
     type: String, 
     enum: ["student"], 
     default: "student",
-    immutable: true // Prevents role modification after creation
+    immutable: true // "Airgap" security: role cannot be changed
   },
 
   // SECURITY STATUS
@@ -43,7 +41,6 @@ const userSchema = new mongoose.Schema({
   },
 
   // SECURITY VERSIONING
-  // Increments on password reset to invalidate active JWT sessions
   tokenVersion: {
     type: Number,
     default: 0
@@ -60,9 +57,10 @@ userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   
   try {
-    const salt = await bcrypt.genSalt(10);
+    // Standardizing salt rounds to 12 for production-grade security
+    const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);
-    this.tokenVersion += 1; // Force re-authentication on all devices
+    this.tokenVersion += 1; 
     next();
   } catch (err) {
     next(err);
@@ -71,15 +69,14 @@ userSchema.pre("save", async function (next) {
 
 /**
  * @section Methods
- * Identity verification handshake.
  */
 userSchema.methods.matchPassword = async function (enteredPassword) {
+  // Use explicit select("+password") in controller to make this work
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
 /**
  * @section Intelligence Indexing
- * Optimized for login performance and duplicate prevention.
  */
 userSchema.index({ email: 1 });
 

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
 import { adminLogin as loginApi, getAdminProfile } from "../api";
 
 const AuthContext = createContext();
@@ -13,8 +13,6 @@ export const AuthProvider = ({ children }) => {
 
   /**
    * @section Terminate Session
-   * Wipes local credentials and resets the identity state.
-   * Wrapped in useCallback to prevent unnecessary re-renders in the verify effect.
    */
   const logout = useCallback(() => {
     localStorage.removeItem("token");
@@ -24,20 +22,21 @@ export const AuthProvider = ({ children }) => {
 
   /**
    * @section Session Restoration
-   * On startup, verifies the local JWT against the backend authority.
+   * Verifies the local JWT against the backend authority on boot.
    */
   useEffect(() => {
     const verifySession = async () => {
       const token = localStorage.getItem("token");
       
-      if (!token) {
+      // LIVE FIX: Handling malformed or 'null' string tokens
+      if (!token || token === "null" || token === "undefined") {
         setLoading(false);
         return;
       }
 
       try {
         const res = await getAdminProfile();
-        // Defensive check: Match the backend structure { success: true, data: user }
+        // Defensive check: Access res.data.data per hardened backend structure
         if (res.data && res.data.success) {
           setUser(res.data.data);
         } else {
@@ -56,7 +55,6 @@ export const AuthProvider = ({ children }) => {
 
   /**
    * @section Mainframe Login
-   * Authenticates credentials and establishes the JWT uplink.
    */
   const login = async (email, password) => {
     try {
@@ -81,29 +79,38 @@ export const AuthProvider = ({ children }) => {
 
   /**
    * @helper Permission Guard (The Warden)
-   * Implements Level 0 (Master) bypass and granular RBAC checks.
+   * Hardened to sync with VITE_MASTER_ADMIN_EMAIL.
    */
-  const hasPermission = (permissionKey) => {
+  const hasPermission = useCallback((permissionKey) => {
     if (!user) return false;
 
-    // LEVEL 0 BYPASS: Sync with VITE_MASTER_ADMIN_EMAIL from .env
+    // LEVEL 0 BYPASS
     const MASTER = (import.meta.env.VITE_MASTER_ADMIN_EMAIL || "css@gmail.com").toLowerCase().trim();
-    const currentEmail = (user.email || "").toLowerCase().trim();
+    const currentEmail = (user.email || user.gmail || "").toLowerCase().trim();
     
     if (currentEmail === MASTER) return true; 
 
-    // Granular RBAC Check
-    return user.permissions?.[permissionKey] === true;
-  };
+    // Granular RBAC Check: Ensure permissions object exists
+    const permissions = user.permissions || {};
+    return permissions[permissionKey] === true;
+  }, [user]);
+
+  // Performance Optimization: Memoize the context value
+  const authValue = useMemo(() => ({
+    user,
+    login,
+    logout,
+    hasPermission,
+    loading
+  }), [user, logout, hasPermission, loading]);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, hasPermission, loading }}>
+    <AuthContext.Provider value={authValue}>
       {!loading && children}
     </AuthContext.Provider>
   );
 };
 
-// Custom Hook for seamless identity access across the frontend
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {

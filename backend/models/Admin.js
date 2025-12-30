@@ -4,7 +4,6 @@ const bcrypt = require("bcryptjs");
 /**
  * @description Master Administrative Identity Schema
  * Hardened for Role-Based Access Control (RBAC) and Brute-force protection.
- * Central authority node for the Society Mainframe.
  */
 const adminSchema = new mongoose.Schema({
   fullName: { 
@@ -21,7 +20,8 @@ const adminSchema = new mongoose.Schema({
   },
   password: { 
     type: String, 
-    required: true 
+    required: true,
+    select: false // CRITICAL: Prevents password leakage in general API responses
   },
 
   // --- SECURITY & BRUTE-FORCE SHIELD ---
@@ -33,8 +33,6 @@ const adminSchema = new mongoose.Schema({
     type: Number 
   },
   
-  // LEVEL 0 CLEARANCE
-  // If true, the authorize middleware grants total access regardless of specific flags.
   isSuperAdmin: { 
     type: Boolean, 
     default: false 
@@ -49,15 +47,12 @@ const adminSchema = new mongoose.Schema({
     type: Date 
   },
   
-  // SECURITY VERSIONING
-  // Increments on password change to invalidate old JWT tokens.
   tokenVersion: {
     type: Number,
     default: 0
   },
 
   // --- PERMISSION MATRIX (RBAC) ---
-  // Granular control for departmental administrators.
   permissions: {
     isAdmin: { 
       type: Boolean, 
@@ -90,17 +85,16 @@ const adminSchema = new mongoose.Schema({
 
 /**
  * @section Middlewares
- * Automatic encryption protocol. Ensures Access Keys are never stored in plain text.
+ * Automatic encryption protocol.
  */
 adminSchema.pre("save", async function (next) {
-  // Only encrypt if password was modified
   if (!this.isModified("password")) return next();
   
   try {
-    const salt = await bcrypt.genSalt(12); // Increased cost factor for industrial security
+    const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);
     
-    // Increment version to force logout on other devices
+    // Security logic: Incrementing version invalidates existing tokens
     this.tokenVersion += 1;
     next();
   } catch (err) {

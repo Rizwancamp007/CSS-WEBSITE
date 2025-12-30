@@ -1,53 +1,47 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext"; // FIXED: Integrated Centralized Auth
+import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
-import { API_URL } from "../App"; 
+// FIXED: Use centralized API functions
+import { 
+  fetchAdminTeam, 
+  addTeamMember, 
+  updateTeamMember, 
+  toggleTeamStatus 
+} from "../api"; 
 
 /**
  * @description Board Command (Team Management)
- * Purpose: Oversight of the society's leadership hierarchy.
- * Hardened with real-time rank sorting and clearance-based form rendering.
+ * Hardened with real-time rank sorting and status-aware node management.
  */
 export default function AdminTeam() {
   const [team, setTeam] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editId, setEditId] = useState(null);
-  const { user, hasPermission } = useAuth(); // FIXED: Using global auth state
+  const { hasPermission } = useAuth();
   const navigate = useNavigate();
-  const token = localStorage.getItem("token"); // Standardized key
   
   const [formData, setFormData] = useState({
     name: "",
     role: "",
     image: "",
     hierarchy: 10,
-    linkedin: "",
-    instagram: "",
+    socials: { linkedin: "", instagram: "", github: "" }, // Synchronized with Model
     description: ""
   });
 
   /**
    * @section Hierarchy Synchronization
-   * Fetches board data and sorts by the Hierarchy Index (Rank 1 = Highest).
    */
-  const fetchTeam = async () => {
+  const loadTeam = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/team`, {
-        headers: { 
-          "Authorization": `Bearer ${token}`,
-          "Content-Type": "application/json"
-        }
-      });
-      
-      const result = await res.json();
-      const list = result.data || (Array.isArray(result) ? result : []);
-      
-      // Sort Logic: Rank 1 (President) -> Rank 99 (Council)
-      setTeam(list.sort((a, b) => a.hierarchy - b.hierarchy));
+      const res = await fetchAdminTeam();
+      const list = res.data?.data || [];
+      // Sort: Rank 1 -> Rank 99
+      setTeam([...list].sort((a, b) => a.hierarchy - b.hierarchy));
     } catch (error) {
       toast.error("Hierarchy Sync Failed: Database link unstable.");
     } finally {
@@ -55,10 +49,7 @@ export default function AdminTeam() {
     }
   };
 
-  useEffect(() => { 
-    if (!token) navigate("/admin");
-    else fetchTeam(); 
-  }, [token]);
+  useEffect(() => { loadTeam(); }, []);
 
   const handleEdit = (member) => {
     setEditId(member._id);
@@ -67,8 +58,11 @@ export default function AdminTeam() {
       role: member.role,
       image: member.image || "",
       hierarchy: member.hierarchy || 10,
-      linkedin: member.linkedin || "",
-      instagram: member.instagram || "",
+      socials: { 
+        linkedin: member.socials?.linkedin || "", 
+        instagram: member.socials?.instagram || "",
+        github: member.socials?.github || ""
+      },
       description: member.description || ""
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -76,69 +70,55 @@ export default function AdminTeam() {
 
   const resetForm = () => {
     setEditId(null);
-    setFormData({ name: "", role: "", image: "", hierarchy: 10, linkedin: "", instagram: "", description: "" });
+    setFormData({ 
+      name: "", role: "", image: "", hierarchy: 10, 
+      socials: { linkedin: "", instagram: "", github: "" }, 
+      description: "" 
+    });
   };
 
   /**
    * @section Appointment Protocol
-   * Handles the confirmed enrollment of new executive board nodes.
    */
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.name || !formData.role) return toast.error("Identity credentials missing.");
-
     setIsSubmitting(true);
     const loadToast = toast.loading(editId ? "Modifying Node..." : "Processing Appointment...");
 
     try {
-      const url = editId ? `${API_URL}/team/${editId}` : `${API_URL}/team`;
-      const method = editId ? "PUT" : "POST";
-
-      const res = await fetch(url, {
-        method: method,
-        headers: { 
-          "Content-Type": "application/json", 
-          "Authorization": `Bearer ${token}` 
-        },
-        body: JSON.stringify(formData)
-      });
-
-      if (res.ok) {
-        toast.success(editId ? "Node Modified." : "Executive Appointed.", { id: loadToast });
-        resetForm();
-        fetchTeam(); 
+      if (editId) {
+        await updateTeamMember(editId, formData);
+        toast.success("Node Parameters Updated.", { id: loadToast });
       } else {
-        toast.error("Operation Denied by Mainframe.", { id: loadToast });
+        await addTeamMember(formData);
+        toast.success("Executive Appointed.", { id: loadToast });
       }
+      resetForm();
+      loadTeam(); 
     } catch (error) {
-      toast.error("Uplink Interrupted.", { id: loadToast });
+      toast.error(error.response?.data?.message || "Operation Denied.", { id: loadToast });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const deleteMember = async (id) => {
-    if (!window.confirm("PERMANENT PURGE: Erase this executive node from history?")) return;
+  const handleToggleStatus = async (id) => {
+    const syncToast = toast.loading("Syncing node status...");
     try {
-      const res = await fetch(`${API_URL}/team/${id}`, {
-        method: "DELETE",
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-
-      if (res.ok) {
-        toast.success("Identity Purged from Registry.");
-        setTeam(prev => prev.filter(m => m._id !== id));
-      }
+      await toggleTeamStatus(id);
+      toast.success("Identity Status Toggled.", { id: syncToast });
+      loadTeam();
     } catch (error) {
-      toast.error("Bridge Connection Error.");
+      toast.error("Handshake failed.", { id: syncToast });
     }
   };
 
+  const canManage = hasPermission('canManageTeams');
+
   return (
-    <div className="min-h-screen bg-[#020617] text-white p-6 md:p-12 relative overflow-x-hidden font-sans selection:bg-blue-500/30">
+    <div className="min-h-screen bg-[#020617] text-white p-6 md:p-12 relative overflow-x-hidden selection:bg-blue-500/30">
       
-      {/* Background Grid Infrastructure */}
-      <div className="fixed inset-0 z-0 bg-[linear-gradient(to_right,#FFD70008_1px,transparent_1px),linear-gradient(to_bottom,#FFD70008_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
+      <div className="fixed inset-0 z-0 bg-[linear-gradient(to_right,#FFD70008_1px,transparent_1px),linear-gradient(to_bottom,#FFD70008_1px,transparent_1px)] bg-[size:4rem_4rem] pointer-events-none" />
 
       <div className="max-w-7xl mx-auto mt-24 relative z-10">
         
@@ -153,15 +133,15 @@ export default function AdminTeam() {
             </p>
           </motion.div>
 
-          <button onClick={() => navigate("/admin-dashboard")} className="group flex items-center gap-3 px-8 py-3 rounded-2xl bg-slate-900 border border-slate-800 text-[10px] font-black uppercase tracking-widest hover:border-blue-500/40 transition-all shadow-xl">
+          <button onClick={() => navigate("/admin-dashboard")} className="px-8 py-3 rounded-2xl bg-slate-900 border border-slate-800 text-[10px] font-black uppercase tracking-widest hover:border-blue-500/40 transition-all shadow-xl">
             Return to Command
           </button>
         </div>
         
-        {/* DEPLOYMENT CONSOLE (Conditional) */}
-        {hasPermission('canManageTeams') ? (
+        {/* DEPLOYMENT CONSOLE */}
+        {canManage && (
           <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="bg-slate-900/40 backdrop-blur-3xl border border-slate-800 p-8 md:p-10 rounded-[3rem] mb-16 shadow-3xl relative overflow-hidden transition-all duration-500">
-            <div className="absolute top-0 left-0 w-full h-1 bg-blue-600/50 shadow-[0_0_15px_rgba(37,99,235,0.5)]" />
+            <div className="absolute top-0 left-0 w-full h-1 bg-blue-600/50" />
             <div className="flex justify-between items-center mb-10">
                 <h2 className="text-xl font-black uppercase tracking-tight italic">{editId ? "Modify Executive Parameters" : "Appoint New Executive"}</h2>
                 {editId && <button onClick={resetForm} className="text-[9px] font-black text-red-500 uppercase tracking-widest hover:underline">Abort Protocol</button>}
@@ -173,51 +153,42 @@ export default function AdminTeam() {
                     <label className="text-[9px] font-black uppercase text-slate-700 tracking-widest ml-1">Personnel Name</label>
                     <input className="w-full bg-slate-950/80 border border-slate-800 p-4 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none transition-all placeholder:text-slate-900" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
                   </div>
-                  
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black uppercase text-slate-700 tracking-widest ml-1">Official Designation</label>
+                    <label className="text-[9px] font-black uppercase text-slate-700 tracking-widest ml-1">Designation</label>
                     <input className="w-full bg-slate-950/80 border border-slate-800 p-4 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none transition-all placeholder:text-slate-900" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} required />
                   </div>
-
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black uppercase text-slate-700 tracking-widest ml-1">Hierarchy Index (Rank)</label>
+                    <label className="text-[9px] font-black uppercase text-slate-700 tracking-widest ml-1">Rank (1=Highest)</label>
                     <input className="w-full bg-slate-950/80 border border-slate-800 p-4 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none transition-all" type="number" value={formData.hierarchy} onChange={e => setFormData({...formData, hierarchy: e.target.value})} />
                   </div>
-
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black uppercase text-slate-700 tracking-widest ml-1">Visual Resource (Image URL)</label>
+                    <label className="text-[9px] font-black uppercase text-slate-700 tracking-widest ml-1">Image Resource URL</label>
                     <input className="w-full bg-slate-950/80 border border-slate-800 p-4 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none transition-all placeholder:text-slate-900" value={formData.image} onChange={e => setFormData({...formData, image: e.target.value})} />
                   </div>
-
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black uppercase text-slate-700 tracking-widest ml-1">LinkedIn Frequency</label>
-                    <input className="w-full bg-slate-950/80 border border-slate-800 p-4 rounded-2xl text-xs font-bold text-white focus:border-[#FFD700]/30 outline-none transition-all placeholder:text-slate-900" value={formData.linkedin} onChange={e => setFormData({...formData, linkedin: e.target.value})} />
+                    <label className="text-[9px] font-black uppercase text-slate-700 tracking-widest ml-1">LinkedIn URL</label>
+                    <input className="w-full bg-slate-950/80 border border-slate-800 p-4 rounded-2xl text-xs font-bold text-white focus:border-[#FFD700]/30 outline-none transition-all" value={formData.socials.linkedin} onChange={e => setFormData({...formData, socials: {...formData.socials, linkedin: e.target.value}})} />
                   </div>
-
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black uppercase text-slate-700 tracking-widest ml-1">Instagram Uplink</label>
-                    <input className="w-full bg-slate-950/80 border border-slate-800 p-4 rounded-2xl text-xs font-bold text-white focus:border-[#FFD700]/30 outline-none transition-all placeholder:text-slate-900" value={formData.instagram} onChange={e => setFormData({...formData, instagram: e.target.value})} />
+                    <label className="text-[9px] font-black uppercase text-slate-700 tracking-widest ml-1">Instagram URL</label>
+                    <input className="w-full bg-slate-950/80 border border-slate-800 p-4 rounded-2xl text-xs font-bold text-white focus:border-[#FFD700]/30 outline-none transition-all" value={formData.socials.instagram} onChange={e => setFormData({...formData, socials: {...formData.socials, instagram: e.target.value}})} />
                   </div>
               </div>
 
               <div className="lg:col-span-1 flex flex-col gap-6">
                   <div className="flex-grow space-y-1">
-                    <label className="text-[9px] font-black uppercase text-slate-700 tracking-widest ml-1">Personnel Description</label>
-                    <textarea className="w-full h-40 bg-slate-950/80 border border-slate-800 p-4 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none resize-none placeholder:text-slate-900" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})}></textarea>
+                    <label className="text-[9px] font-black uppercase text-slate-700 tracking-widest ml-1">Biography</label>
+                    <textarea className="w-full h-40 bg-slate-950/80 border border-slate-800 p-4 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none resize-none" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})}></textarea>
                   </div>
-                  <button disabled={isSubmitting} className={`w-full py-5 rounded-2xl font-black uppercase tracking-[0.3em] text-[10px] transition-all shadow-xl ${editId ? 'bg-[#FFD700] text-black hover:bg-yellow-500' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
+                  <button disabled={isSubmitting} className={`w-full py-5 rounded-2xl font-black uppercase tracking-[0.3em] text-[10px] transition-all shadow-xl ${editId ? 'bg-[#FFD700] text-black' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
                     {isSubmitting ? "TRANSMITTING..." : editId ? "COMMIT CHANGES" : "CONFIRM APPOINTMENT"}
                   </button>
               </div>
             </form>
           </motion.div>
-        ) : (
-          <div className="bg-slate-900/20 border border-dashed border-slate-800 p-10 rounded-[3rem] text-center mb-16 opacity-40 italic text-[10px] font-black uppercase tracking-widest">
-            Identity Unverified: Administrative Clearance Level Insufficient
-          </div>
         )}
 
-        {/* HIERARCHY REGISTRY (Grid View) */}
+        {/* HIERARCHY REGISTRY */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
           {loading ? (
              <div className="col-span-full py-20 flex flex-col items-center gap-4 text-slate-800 font-black uppercase tracking-[0.4em] text-[10px]">
@@ -227,18 +198,20 @@ export default function AdminTeam() {
           ) : (
             <AnimatePresence>
               {team.map((m) => (
-                <motion.div layout key={m._id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} whileHover={{ y: -5, borderColor: 'rgba(37,99,235,0.4)' }} className="group bg-slate-950/60 backdrop-blur-2xl p-6 rounded-[2.5rem] border border-slate-800 transition-all duration-500 text-center relative overflow-hidden shadow-2xl">
-                  <div className="absolute top-4 right-4 text-[7px] bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-full text-slate-600 font-black">NODE_RANK_{m.hierarchy}</div>
+                <motion.div layout key={m._id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`group bg-slate-950/60 backdrop-blur-2xl p-6 rounded-[2.5rem] border transition-all duration-500 text-center relative overflow-hidden flex flex-col ${!m.isActive ? 'border-red-900/50 grayscale opacity-50' : 'border-slate-800 shadow-2xl hover:border-blue-500/40'}`}>
+                  <div className="absolute top-4 right-4 text-[7px] bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-full text-slate-600 font-black uppercase">Rank_{m.hierarchy}</div>
                   <div className="relative w-20 h-20 mx-auto mb-6">
-                    <img src={m.image} className="w-full h-full rounded-full object-cover border-4 border-slate-800 group-hover:border-blue-500/50 transition-all grayscale group-hover:grayscale-0 shadow-xl" onError={(e) => e.target.src = "https://via.placeholder.com/150?text=NODE"} />
+                    <img src={m.image || "https://placehold.co/150/020617/FFD700?text=CSS"} className="w-full h-full rounded-full object-cover border-4 border-slate-800 shadow-xl" />
                   </div>
                   <h3 className="font-black text-xs uppercase tracking-tight text-white mb-1 truncate">{m.name}</h3>
                   <p className="text-[8px] text-blue-500 font-black uppercase tracking-widest mb-6 italic">{m.role}</p>
                   
-                  {hasPermission('canManageTeams') && (
-                    <div className="flex gap-4 pt-4 border-t border-slate-800/50 mt-auto">
-                        <button onClick={() => handleEdit(m)} className="flex-1 text-[8px] font-black uppercase text-slate-600 hover:text-blue-400 transition-colors tracking-widest">Edit</button>
-                        <button onClick={() => deleteMember(m._id)} className="flex-1 text-[8px] font-black uppercase text-slate-600 hover:text-red-500 transition-colors tracking-widest">Purge</button>
+                  {canManage && (
+                    <div className="flex flex-col gap-2 pt-4 border-t border-slate-800/50 mt-auto">
+                        <button onClick={() => handleEdit(m)} className="text-[8px] font-black uppercase text-blue-400 hover:text-white">Edit Node</button>
+                        <button onClick={() => handleToggleStatus(m._id)} className={`text-[8px] font-black uppercase ${m.isActive ? 'text-red-500' : 'text-emerald-500'}`}>
+                          {m.isActive ? 'Decommission' : 'Reactivate'}
+                        </button>
                     </div>
                   )}
                 </motion.div>

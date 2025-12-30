@@ -2,17 +2,24 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { API_URL } from "../App"; 
+import { 
+  fetchAdminEvents, 
+  createEvent, 
+  updateEvent, 
+  deleteEvent as deleteApi 
+} from "../api"; // FIXED: Use centralized API
+import { useAuth } from "../context/AuthContext"; // FIXED: Centralized Auth
 
 /**
  * @description Mission Operations Center (Admin Events)
- * Hardened for lifecycle management of society events.
- * Features dual-view ledger systems and real-time status toggling.
+ * Hardened for lifecycle management with real-time occupancy tracking.
  */
 export default function AdminEvents() {
   const [events, setEvents] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [editId, setEditId] = useState(null); 
+  const { hasPermission } = useAuth();
+  
   const [formData, setFormData] = useState({ 
     title: "", 
     date: "", 
@@ -21,32 +28,19 @@ export default function AdminEvents() {
     maxParticipants: 0, 
     location: "GCU Lahore"
   });
+  
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState("ledger"); 
-  const [userPermissions, setUserPermissions] = useState(null);
-  
   const navigate = useNavigate();
-  const token = localStorage.getItem("token"); // Unified token key
 
   /**
    * @section Ledger Synchronization
-   * Fetches the full mission history including archived nodes.
    */
-  const fetchEvents = async () => {
+  const loadEvents = async () => {
     try {
-      const res = await fetch(`${API_URL}/events/admin/all`, {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      
-      const result = await res.json();
-      
-      // Standardized extraction from { success, data }
-      const list = result.data || (Array.isArray(result) ? result : []);
+      const res = await fetchAdminEvents();
+      const list = res.data?.data || [];
       setEvents(list);
-      
-      const savedUserData = JSON.parse(localStorage.getItem("user") || "{}");
-      setUserPermissions(savedUserData?.permissions);
-      
     } catch (error) {
       toast.error("Ledger Sync Failed: Mainframe Unreachable.");
     } finally {
@@ -54,14 +48,10 @@ export default function AdminEvents() {
     }
   };
 
-  useEffect(() => { 
-    if (!token) navigate("/admin");
-    else fetchEvents(); 
-  }, [token, navigate]);
+  useEffect(() => { loadEvents(); }, []);
 
   /**
    * @section Deployment Logic
-   * Handles initialization of new missions or modification of existing nodes.
    */
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -69,60 +59,32 @@ export default function AdminEvents() {
 
     const payload = {
       ...formData,
-      maxParticipants: parseInt(formData.maxParticipants) || 0,
-      image: formData.image || "/assets/images/placeholder.jpg"
+      maxParticipants: parseInt(formData.maxParticipants) || 0
     };
 
-    const url = editId ? `${API_URL}/events/${editId}` : `${API_URL}/events`;
-    const method = editId ? "PUT" : "POST";
     const loadToast = toast.loading(editId ? "Updating Node..." : "Broadcasting Mission...");
 
     try {
-      const res = await fetch(url, {
-        method: method,
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify(payload) 
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        toast.success(editId ? "Parameters Updated." : "Mission Deployed.", { id: loadToast });
-        resetForm();
-        fetchEvents(); 
+      if (editId) {
+        await updateEvent(editId, payload);
+        toast.success("Parameters Updated.", { id: loadToast });
       } else {
-        toast.error(data.message || "Operation failed.", { id: loadToast });
+        await createEvent(payload);
+        toast.success("Mission Deployed.", { id: loadToast });
       }
+      resetForm();
+      loadEvents(); 
     } catch (error) {
-      toast.error("Bridge Connection Lost.", { id: loadToast });
+      toast.error(error.response?.data?.message || "Operation failed.", { id: loadToast });
     }
-  };
-
-  const handleArchive = async (id) => {
-    const loadToast = toast.loading("Modifying Node Visibility...");
-    try {
-      const res = await fetch(`${API_URL}/events/archive/${id}`, {
-        method: "PATCH",
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      if(res.ok) {
-        toast.success("Visibility Status Toggled.", { id: loadToast });
-        fetchEvents();
-      }
-    } catch (e) { toast.error("Archive Failed.", { id: loadToast }); }
   };
 
   const handleDelete = async (id) => {
     if(!window.confirm("CRITICAL: Permanent wipe requested. Purge this node?")) return;
     try {
-      const res = await fetch(`${API_URL}/events/${id}`, {
-        method: "DELETE",
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      if(res.ok) {
-        toast.success("Node Purged from Mainframe.");
-        setEvents(prev => prev.filter(ev => ev._id !== id));
-      }
+      await deleteApi(id);
+      toast.success("Node Purged from Mainframe.");
+      setEvents(prev => prev.filter(ev => ev._id !== id));
     } catch (e) { toast.error("Wipe failed."); }
   };
 
@@ -149,11 +111,13 @@ export default function AdminEvents() {
     e.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const canManage = hasPermission("canManageEvents");
+
   return (
     <div className="min-h-screen bg-[#020617] text-white p-6 md:p-12 relative overflow-x-hidden selection:bg-blue-500/30">
       
       {/* Background Infrastructure */}
-      <div className="fixed inset-0 z-0 bg-[linear-gradient(to_right,#FFD70008_1px,transparent_1px),linear-gradient(to_bottom,#FFD70008_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
+      <div className="fixed inset-0 z-0 bg-[linear-gradient(to_right,#FFD70008_1px,transparent_1px),linear-gradient(to_bottom,#FFD70008_1px,transparent_1px)] bg-[size:4rem_4rem] pointer-events-none" />
 
       <div className="max-w-7xl mx-auto mt-24 relative z-10">
         
@@ -174,11 +138,11 @@ export default function AdminEvents() {
         </div>
 
         {/* MISSION DEPLOYMENT CONSOLE */}
-        {userPermissions?.canManageEvents && (
+        {canManage && (
           <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="bg-slate-900/40 backdrop-blur-3xl border border-slate-800 p-10 rounded-[3rem] mb-16 shadow-2xl relative overflow-hidden transition-all group">
             <div className="absolute top-0 left-0 w-2 h-full bg-blue-600/50" />
             <h2 className="text-xl font-black uppercase mb-10 tracking-tight flex items-center gap-3">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_10px_rgba(59,130,246,1)]"></span>
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
               {editId ? "Modify Mission Parameters" : "Broadcast New Mission"}
             </h2>
             <form onSubmit={handleSubmit} className="grid md:grid-cols-2 gap-8">
@@ -213,7 +177,7 @@ export default function AdminEvents() {
                 <tbody className="text-xs">
                   {filteredEvents.map(event => (
                     <motion.tr key={event._id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`border-t border-slate-800/30 hover:bg-white/[0.02] transition-all ${event.isArchived ? "opacity-40 grayscale" : ""}`}>
-                      <td className="p-8 text-slate-500 font-mono italic">{new Date(event.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                      <td className="p-8 text-slate-500 font-mono italic">{new Date(event.date).toLocaleDateString('en-GB')}</td>
                       <td className="p-8">
                           <div className="font-black text-slate-200 uppercase tracking-tight">{event.title}</div>
                           <div className="text-[9px] text-slate-600 uppercase font-black tracking-widest mt-1">{event.location}</div>
@@ -222,14 +186,13 @@ export default function AdminEvents() {
                         <div className="flex flex-col gap-1">
                           <span className="text-[10px] font-black text-blue-400">{event.registrationCount} / {event.maxParticipants || "∞"}</span>
                           <div className="w-24 h-1 bg-slate-800 rounded-full overflow-hidden">
-                            <div className="h-full bg-blue-500" style={{ width: `${(event.registrationCount / (event.maxParticipants || 100)) * 100}%` }} />
+                            <div className="h-full bg-blue-500" style={{ width: `${Math.min((event.registrationCount / (event.maxParticipants || 100)) * 100, 100)}%` }} />
                           </div>
                         </div>
                       </td>
                       <td className="p-8 text-right">
                         <div className="flex justify-end gap-6 uppercase font-black text-[10px] tracking-widest">
                           <button onClick={() => handleEdit(event)} className="text-blue-500 hover:text-white transition-all">Modify</button>
-                          <button onClick={() => handleArchive(event._id)} className="text-amber-600 hover:text-white transition-all">{event.isArchived ? "Restore" : "Archive"}</button>
                           <button onClick={() => handleDelete(event._id)} className="text-red-600 hover:text-white transition-all">Purge</button>
                         </div>
                       </td>
@@ -245,17 +208,13 @@ export default function AdminEvents() {
                   <motion.div key={event._id} layout whileHover={{ borderColor: 'rgba(255,215,0,0.4)', y: -8 }} className={`bg-slate-950/60 p-8 rounded-[2.5rem] border transition-all duration-500 relative overflow-hidden flex flex-col ${event.isArchived ? "border-amber-900/50 opacity-50 grayscale" : "border-slate-800 shadow-2xl"}`}>
                     <div className="flex justify-between items-start mb-8">
                       <span className="text-[9px] font-black uppercase tracking-[0.2em] px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-600">CAP: {event.maxParticipants || "∞"}</span>
-                      {event.isArchived && <span className="text-[9px] text-amber-500 font-black uppercase tracking-widest bg-amber-500/10 px-3 py-1.5 rounded-xl border border-amber-500/20">ARCHIVED</span>}
                     </div>
                     <h3 className="text-2xl font-black text-white uppercase tracking-tighter mb-2 leading-none italic">{event.title}</h3>
                     <p className="text-[10px] text-slate-700 font-black uppercase tracking-widest mb-10">{new Date(event.date).toDateString()}</p>
                     
                     <div className="mt-auto grid grid-cols-2 gap-4">
                       <button onClick={() => handleEdit(event)} className="bg-blue-600/10 text-blue-400 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all">Edit</button>
-                      <button onClick={() => handleArchive(event._id)} className={`py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${event.isArchived ? "bg-emerald-600/10 text-emerald-400" : "bg-amber-600/10 text-amber-500"} hover:text-white shadow-lg`}>
-                          {event.isArchived ? "Restore" : "Archive"}
-                      </button>
-                      <button onClick={() => handleDelete(event._id)} className="col-span-2 bg-red-600/10 text-red-500 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all shadow-xl">Purge Node</button>
+                      <button onClick={() => handleDelete(event._id)} className="bg-red-600/10 text-red-500 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all shadow-xl">Purge Node</button>
                     </div>
                   </motion.div>
                 ))}

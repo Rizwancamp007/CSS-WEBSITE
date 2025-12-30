@@ -5,20 +5,24 @@ const Membership = require("../models/Membership");
 
 /**
  * @helper Standardized Logging Protocol
- * Hardened to capture forensic metadata for every event modification.
+ * Captured forensic metadata optimized for Render/Vercel proxy environments.
  */
 const logAction = async (adminId, action, details, req) => {
     try {
-        // Multi-collection identity lookup for the operator
         let user = await Admin.findById(adminId) || await Membership.findById(adminId);
         const email = user ? (user.email || user.gmail) : "SYSTEM_NODE";
+
+        // LIVE FIX: Precise IP detection for proxied cloud hosting
+        const ip = req.headers['x-forwarded-for']?.split(',')[0] || 
+                   req.connection.remoteAddress || 
+                   req.socket.remoteAddress;
 
         await ActivityLog.create({
             adminId,
             adminEmail: email,
             action: action.toUpperCase(),
             details,
-            ipAddress: req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress,
+            ipAddress: ip,
             userAgent: req.headers["user-agent"]
         });
     } catch (err) { 
@@ -32,14 +36,11 @@ const logAction = async (adminId, action, details, req) => {
 
 /**
  * @desc Public: Get all events (Active Only)
- * Used by the student-facing Events page.
  */
 exports.getEvents = async (req, res) => {
     try {
-        // Only fetch non-archived events, sorted chronologically
+        // Only fetch non-archived events, sorted chronologically (soonest first)
         const events = await Event.find({ isArchived: false }).sort({ date: 1 });
-        
-        // HARDENED: Explicit success flag for frontend consistency
         res.json({ success: true, data: events });
     } catch (error) {
         res.status(500).json({ success: false, message: "Mission registry inaccessible." });
@@ -52,13 +53,14 @@ exports.getEvents = async (req, res) => {
 
 /**
  * @desc Admin: Get all events (Full History)
- * Essential for the Admin Dashboard 'Missions' analytics.
  */
 exports.getAdminEvents = async (req, res) => {
     try {
-        const events = await Event.find().sort({ createdAt: -1 });
-        
-        // FIXED: Standardized wrapper allows Dashboard to read 'data.length'
+        // PRODUCTION UPGRADE: Populate creator details for Dashboard transparency
+        const events = await Event.find()
+            .populate('createdBy', 'fullName email gmail')
+            .sort({ createdAt: -1 });
+            
         res.json({ success: true, data: events });
     } catch (error) {
         res.status(500).json({ success: false, message: "Administrative fetch sequence failed." });
@@ -74,7 +76,6 @@ exports.getAdminEvents = async (req, res) => {
  */
 exports.createEvent = async (req, res) => {
     try {
-        // Create event and link the creator's ID (Polymorphic)
         const event = await Event.create({ 
             ...req.body, 
             createdBy: req.user.id 

@@ -1,96 +1,74 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext"; // FIXED: Integrated Centralized Auth
+import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
-import { API_URL } from "../App"; 
+// FIXED: Use centralized API functions
+import { fetchInquiries, markInquiryRead, deleteMessage as deleteApi } from "../api"; 
 
 /**
  * @description Inquiry Inbox (Master Terminal)
- * Exclusively for Level 0 (SuperAdmin) communications management.
- * Features real-time status syncing and secure delete protocols.
+ * Exclusively for Level 0 oversight.
  */
 export default function AdminMessages() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedMsg, setSelectedMsg] = useState(null);
-  const { user } = useAuth(); // FIXED: Reading identity from context
+  const { user } = useAuth();
   const navigate = useNavigate();
-  const token = localStorage.getItem("token"); // Unified token key
 
   /**
    * @section Communication Sync
-   * Fetches incoming transmissions from the hardened backend inbox.
    */
-  const fetchMessages = async () => {
+  const loadMessages = async () => {
     try {
-      const res = await fetch(`${API_URL}/admin/messages`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      
-      // RBAC Gatekeeper
-      if (res.status === 403) {
-        toast.error("RESTRICTED: Level 0 Clearance Required.");
-        navigate("/admin-dashboard");
-        return;
-      }
-
-      const result = await res.json();
-      const msgList = result.data || (Array.isArray(result) ? result : []);
+      const res = await fetchInquiries();
+      // Handle standardized { success: true, data: [...] } structure
+      const msgList = res.data?.data || [];
       setMessages(msgList);
     } catch (error) {
-      toast.error("Communication Uplink Failed: Frequencies Unstable.");
+      if (error.response?.status === 403) {
+        toast.error("RESTRICTED: Level 0 Clearance Required.");
+        navigate("/admin-dashboard");
+      } else {
+        toast.error("Uplink Failed: Frequencies Unstable.");
+      }
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => { 
-    // SECURITY GUARD: Redirect unauthorized board members
-    if (user && user.email !== "css@gmail.com") {
+    // LIVE SYNC: Check Master Admin status via Environment Variable
+    const MASTER_EMAIL = import.meta.env.VITE_MASTER_ADMIN_EMAIL || "css@gmail.com";
+    if (user && user.email?.toLowerCase() !== MASTER_EMAIL.toLowerCase()) {
       toast.error("ACCESS DENIED: Clearance Level 0 Required.");
       navigate("/admin-dashboard");
       return;
     }
+    loadMessages(); 
+  }, [user, navigate]);
 
-    if (!token) navigate("/admin");
-    else fetchMessages(); 
-  }, [token, user, navigate]);
-
-  /**
-   * @section Protocol Status Update
-   * Marks a message as "Read" (Logged) in the database.
-   */
-  const markAsRead = async (id) => {
-    try {
-      await fetch(`${API_URL}/admin/messages/${id}`, {
-        method: "PATCH",
-        headers: { 
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ isRead: true })
-      });
-      // Instant local state update for zero-latency UI
-      setMessages(prev => prev.map(m => m._id === id ? { ...m, isRead: true } : m));
-    } catch (error) {
-      console.error("Transmission Status Update Error:", error);
+  const handleSelectMessage = async (msg) => {
+    setSelectedMsg(msg);
+    if (!msg.isRead) {
+      try {
+        await markInquiryRead(msg._id);
+        setMessages(prev => prev.map(m => m._id === msg._id ? { ...m, isRead: true } : m));
+      } catch (error) {
+        console.error("Transmission Log Update Error:", error);
+      }
     }
   };
 
-  const deleteMessage = async (id) => {
-    if(!window.confirm("PERMANENT PURGE? This inquiry node will be erased from the registry.")) return;
+  const handlePurge = async (id) => {
+    if(!window.confirm("PERMANENT PURGE? This node will be erased.")) return;
     const purgeToast = toast.loading("Purging Transmission...");
     try {
-      const res = await fetch(`${API_URL}/admin/messages/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        toast.success("Inquiry Node Purged.", { id: purgeToast });
-        setMessages(prev => prev.filter(m => m._id !== id));
-        if (selectedMsg?._id === id) setSelectedMsg(null);
-      }
+      await deleteApi(id);
+      toast.success("Inquiry Node Purged.", { id: purgeToast });
+      setMessages(prev => prev.filter(m => m._id !== id));
+      if (selectedMsg?._id === id) setSelectedMsg(null);
     } catch (error) {
       toast.error("Purge Protocol Failed.", { id: purgeToast });
     }
@@ -99,7 +77,7 @@ export default function AdminMessages() {
   return (
     <div className="min-h-screen bg-[#020617] text-white p-6 md:p-12 relative overflow-x-hidden font-sans selection:bg-blue-500/30">
       
-      {/* Background Grid Infrastructure */}
+      {/* Background Grid */}
       <div className="fixed inset-0 z-0 bg-[linear-gradient(to_right,#FFD70008_1px,transparent_1px),linear-gradient(to_bottom,#FFD70008_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
 
       <div className="max-w-7xl mx-auto mt-24 relative z-10">
@@ -115,17 +93,14 @@ export default function AdminMessages() {
             </p>
           </motion.div>
 
-          <button 
-            onClick={() => navigate("/admin-dashboard")} 
-            className="flex items-center gap-3 px-8 py-3 rounded-2xl bg-slate-900 border border-slate-800 text-[10px] font-black uppercase tracking-widest hover:border-blue-500/40 transition-all shadow-2xl"
-          >
+          <button onClick={() => navigate("/admin-dashboard")} className="flex items-center gap-3 px-8 py-3 rounded-2xl bg-slate-900 border border-slate-800 text-[10px] font-black uppercase tracking-widest hover:border-blue-500/40 transition-all shadow-2xl">
             Return to Command
           </button>
         </div>
 
         <div className="grid lg:grid-cols-12 gap-8 h-[calc(100vh-280px)] min-h-[550px]">
           
-          {/* TRANSMISSION SCANNER (List) */}
+          {/* TRANSMISSION SCANNER */}
           <div className="lg:col-span-4 space-y-3 overflow-y-auto pr-2 custom-scrollbar">
             {loading ? (
               <div className="flex flex-col items-center justify-center h-full py-10 opacity-50">
@@ -144,24 +119,19 @@ export default function AdminMessages() {
                     layout
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
-                    onClick={() => { setSelectedMsg(msg); markAsRead(msg._id); }}
+                    onClick={() => handleSelectMessage(msg)}
                     className={`group p-6 rounded-[2.5rem] border cursor-pointer transition-all duration-500 relative overflow-hidden ${
                       selectedMsg?._id === msg._id 
                       ? "bg-blue-600/10 border-blue-500/40 shadow-2xl" 
                       : "bg-slate-900/40 border-slate-800 hover:border-slate-700"
                     }`}
                   >
-                    {!msg.isRead && (
-                      <div className="absolute top-0 right-0 w-8 h-8 bg-[#FFD700] blur-2xl opacity-20" />
-                    )}
-
+                    {!msg.isRead && <div className="absolute top-0 right-0 w-8 h-8 bg-[#FFD700] blur-2xl opacity-20" />}
                     <div className="flex justify-between items-start mb-3">
                       <span className={`text-[8px] font-black px-2 py-1 rounded-lg uppercase tracking-widest border ${msg.isRead ? "bg-slate-950 border-slate-800 text-slate-700" : "bg-[#FFD700] border-[#FFD700]/30 text-black"}`}>
                         {msg.isRead ? "LOGGED" : "DIRECT_HIT"}
                       </span>
-                      <span className="text-[9px] text-slate-600 font-mono font-bold">
-                        {new Date(msg.createdAt).toLocaleDateString('en-GB')}
-                      </span>
+                      <span className="text-[9px] text-slate-600 font-mono font-bold">{new Date(msg.createdAt).toLocaleDateString('en-GB')}</span>
                     </div>
                     <h3 className={`font-black text-sm uppercase tracking-tight truncate ${selectedMsg?._id === msg._id ? "text-blue-400" : "text-white"}`}>{msg.subject}</h3>
                     <p className="text-[10px] text-slate-500 font-black uppercase tracking-tighter truncate mt-1">{msg.name}</p>
@@ -171,52 +141,37 @@ export default function AdminMessages() {
             )}
           </div>
 
-          {/* DATA PAYLOAD VIEWER (Content) */}
+          {/* DATA PAYLOAD VIEWER */}
           <div className="lg:col-span-8">
             <AnimatePresence mode="wait">
               {selectedMsg ? (
                 <motion.div
                   key={selectedMsg._id}
                   initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.02 }}
-                  className="bg-slate-900/40 backdrop-blur-3xl border border-slate-800 rounded-[3rem] p-10 h-full shadow-3xl relative flex flex-col transition-all duration-500"
+                  className="bg-slate-900/40 backdrop-blur-3xl border border-slate-800 rounded-[3rem] p-10 h-full shadow-3xl relative flex flex-col transition-all"
                 >
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500/30 to-transparent" />
                   
-                  {/* METADATA NODE */}
                   <div className="mb-10 border-b border-slate-800/50 pb-8 flex flex-col md:flex-row justify-between items-start gap-6">
                     <div>
-                      <h2 className="text-3xl font-black text-white mb-4 uppercase tracking-tighter leading-none italic">{selectedMsg.subject}</h2>
+                      <h2 className="text-3xl font-black text-white mb-4 uppercase tracking-tighter italic">{selectedMsg.subject}</h2>
                       <div className="flex flex-wrap gap-x-8 gap-y-2 text-[10px] font-black uppercase tracking-[0.2em]">
-                        <div className="flex items-center gap-2 text-slate-500">
-                          <span className="text-blue-500">ORIGIN_NODE:</span> <span className="text-slate-300 font-mono">{selectedMsg.name}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-slate-500">
-                          <span className="text-blue-500">UPLINK_PROTOCOL:</span> <span className="text-slate-300 font-mono">{selectedMsg.email}</span>
-                        </div>
+                        <div className="flex items-center gap-2 text-slate-500"><span className="text-blue-500">ORIGIN:</span> <span className="text-slate-300 font-mono">{selectedMsg.name}</span></div>
+                        <div className="flex items-center gap-2 text-slate-500"><span className="text-blue-500">UPLINK:</span> <span className="text-slate-300 font-mono">{selectedMsg.email}</span></div>
                       </div>
                     </div>
-                    
-                    <button 
-                      onClick={() => deleteMessage(selectedMsg._id)}
-                      className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-600 hover:text-white transition-all shadow-xl group"
-                      title="Purge Inquiry"
-                    >
-                      <svg className="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    <button onClick={() => handlePurge(selectedMsg._id)} className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-600 hover:text-white transition-all">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     </button>
                   </div>
 
-                  {/* DECRYPTED MESSAGE BODY */}
                   <div className="flex-grow text-slate-400 leading-relaxed font-medium whitespace-pre-wrap text-sm custom-scrollbar overflow-y-auto pr-4">
                     {selectedMsg.message}
                   </div>
 
-                  {/* ACTION TERMINAL */}
                   <div className="mt-12 pt-8 border-t border-slate-800/50">
-                    <a 
-                      href={`mailto:${selectedMsg.email}?subject=RE: ${selectedMsg.subject} - GCU CS Society`}
-                      className="inline-flex items-center gap-4 px-12 py-5 bg-gradient-to-r from-[#FFD700] via-yellow-500 to-yellow-600 text-black font-black uppercase text-[10px] tracking-[0.3em] rounded-[2rem] hover:brightness-110 hover:shadow-[0_0_30px_rgba(255,215,0,0.2)] transition-all shadow-2xl active:scale-95"
-                    >
-                      Initialize Response Link
+                    <a href={`mailto:${selectedMsg.email}?subject=RE: ${selectedMsg.subject}`} className="inline-flex items-center gap-4 px-12 py-5 bg-gradient-to-r from-[#FFD700] to-yellow-600 text-black font-black uppercase text-[10px] tracking-[0.3em] rounded-[2rem] hover:brightness-110 shadow-2xl transition-all">
+                      Initialize Response
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
                     </a>
                   </div>
@@ -231,11 +186,6 @@ export default function AdminMessages() {
           </div>
         </div>
       </div>
-      <style jsx>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
-      `}</style>
     </div>
   );
 }

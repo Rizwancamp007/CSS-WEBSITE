@@ -13,42 +13,39 @@ const { protect, authorize } = require("../middleware/authMiddleware");
 
 /**
  * @section Public Enlistment Protocols
- * These endpoints are open to the student body for initial interaction.
+ * Open frequency for students to join the society.
  */
 
-// Deployment of a new candidacy application
-// Path: POST /api/memberships
+// Deployment of a new candidacy application: POST /api/memberships
 router.post("/", applyForMembership);
 
-// Terminal Activation: Approved candidate establishes their access key
-// Path: POST /api/memberships/setup-password
-// Linked to the 'ActivateAccount.jsx' frontend module
-router.post("/setup-password", setupAdminPassword);
+// Terminal Activation: Handshake for newly approved board members
+// PRODUCTION SYNC: Standardized path for ActivateAccount.jsx
+router.post("/activate-board", setupAdminPassword);
 
 
 /**
  * @section Administrative Command (High Clearance)
- * Access restricted to Administrative nodes with 'isAdmin' clearance.
- * Sensitive data operations are monitored via ActivityLog.
+ * Requires [protect] verification and [isAdmin] RBAC clearance.
  */
 
-// Personnel Registry: Retrieve all candidates and board members
-// This powers the 'Authority Mgr' count on the Dashboard
+// Personnel Registry: GET /api/memberships/admin/all
+// PRODUCTION SYNC: Placed above parameterized routes
 router.get("/admin/all", 
     protect, 
     authorize("isAdmin"), 
     getAllMemberships
 );
 
-// Authority Sync: Modify permissions and grant access levels
-// Level 0 (Master) typically required via controller-level checks
+// Authority Sync: PATCH /api/memberships/permissions/:id
+// Integrated with forensic logging in adminController
 router.patch("/permissions/:id", 
     protect, 
     authorize("isAdmin"), 
     updateMemberPermissions
 );
 
-// Registry Purge: Remove a candidate or decommission a member
+// Registry Purge: DELETE /api/memberships/:id
 router.delete("/:id", 
     protect, 
     authorize("isAdmin"), 

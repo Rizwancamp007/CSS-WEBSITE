@@ -3,7 +3,6 @@ const mongoose = require("mongoose");
 /**
  * @description Official Society Announcement Schema (The Broadcaster)
  * Handles institutional alerts, notices, and opportunities.
- * Hardened for polymorphic authorship and high-speed public retrieval.
  */
 const announcementSchema = new mongoose.Schema({
   title: { 
@@ -18,13 +17,11 @@ const announcementSchema = new mongoose.Schema({
     required: true 
   },
 
-  // Manual date override for scheduled events, defaults to transmission time
   date: { 
     type: Date, 
     default: Date.now 
   },
 
-  // Broadcast Classification
   type: { 
     type: String, 
     enum: ['Update', 'Notice', 'Opportunity'],
@@ -32,43 +29,42 @@ const announcementSchema = new mongoose.Schema({
     default: 'Update' 
   },
 
-  // URGENCY PROTOCOL
-  // Allows pinning high-priority alerts to the top of the frontend feed
   priority: {
     type: String,
     enum: ['Normal', 'High', 'Critical'],
     default: 'Normal'
   },
 
-  // LIFECYCLE MANAGEMENT
-  // Soft-delete flag ensures historical data remains in DB but hidden from public
   isArchived: { 
     type: Boolean, 
     default: false 
   },
 
-  // AUTHOR IDENTITY (Polymorphic)
-  // Stores the ObjectId of either an Admin node or an Executive Board node
+  /**
+   * AUTHOR IDENTITY (Polymorphic Ref)
+   * Added 'refPath' logic. This is the "Ironclad" way to tell Mongoose 
+   * to look in either the 'Admin' or 'Membership' collection depending on who posted.
+   */
   createdBy: { 
     type: mongoose.Schema.Types.ObjectId,
-    required: true
+    required: true,
+    refPath: 'creatorModel' // Dynamic reference
+  },
+  creatorModel: {
+    type: String,
+    required: true,
+    enum: ['Admin', 'Membership'],
+    default: 'Admin'
   }
 }, { 
-  timestamps: true // Captures createdAt (Broadcast Time) and updatedAt
+  timestamps: true 
 });
 
 /**
  * @section Performance & Logic Indexing
- * Optimized for institutional-scale feed filtering and sorting.
  */
-
-// Critical for "Latest News" sorting on Home and Announcement pages
 announcementSchema.index({ createdAt: -1 });
-
-// Optimizes public feed which filters out archived messages
 announcementSchema.index({ isArchived: 1, priority: -1 });
-
-// Text search indexing for "Search Announcements" feature on frontend
 announcementSchema.index({ title: 'text', description: 'text' });
 
 module.exports = mongoose.model("Announcement", announcementSchema);

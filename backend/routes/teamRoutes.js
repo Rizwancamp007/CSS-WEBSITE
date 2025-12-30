@@ -3,45 +3,53 @@ const router = express.Router();
 const { 
     addTeamMember, 
     getTeam, 
+    getAllTeamAdmin, // PRODUCTION SYNC: Added for dashboard management
     updateMember, 
-    removeMember 
+    toggleMemberStatus // PRODUCTION SYNC: Standardized with controller
 } = require("../controllers/teamController");
 const { protect, authorize } = require("../middleware/authMiddleware");
 
 /**
  * @section Public Registry Access
- * Frequency open to the public to view the Society Board and Executive hierarchy.
+ * Frequency open to the public to view the Society Board hierarchy.
  */
-// GET /api/team -> Fetches only active board members sorted by hierarchy
+// GET /api/team -> Fetches only isActive: true members
 router.get("/", getTeam);
 
 
 /**
  * @section Administrative Command (Restricted)
- * All endpoints below require active session verification and 
- * specific [canManageTeams] clearance.
+ * Requires [protect] verification and [canManageTeams] RBAC clearance.
  */
 
-// Appointment: Add a new node to the leadership hierarchy
+// Appointment: POST /api/team
 router.post("/", 
     protect, 
     authorize("canManageTeams"), 
     addTeamMember
 );
 
-// Synchronization: Update credentials or social uplinks for a board member
+// Full Registry: GET /api/team/admin/all
+// PRODUCTION SYNC: Required to see both active and decommissioned members
+router.get("/admin/all", 
+    protect, 
+    authorize("canManageTeams"), 
+    getAllTeamAdmin
+);
+
+// Synchronization: PUT /api/team/:id
 router.put("/:id", 
     protect, 
     authorize("canManageTeams"), 
     updateMember
 );
 
-// Decommission: Remove or deactivate a member node from the board
-// Controller handles soft-delete via isActive flag to preserve audit history
-router.delete("/:id", 
+// Status Toggle: PATCH /api/team/status/:id
+// PRODUCTION SYNC: Changed from DELETE to PATCH for better soft-delete control
+router.patch("/status/:id", 
     protect, 
     authorize("canManageTeams"), 
-    removeMember
+    toggleMemberStatus
 );
 
 module.exports = router;

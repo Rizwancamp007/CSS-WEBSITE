@@ -7,13 +7,11 @@ const mongoose = require("mongoose");
  */
 const activityLogSchema = new mongoose.Schema({
   // OPERATOR IDENTITY
-  // Polymorphic ID supporting both Master Admin and Society Board collections
   adminId: { 
     type: mongoose.Schema.Types.ObjectId, 
     required: true 
   },
   
-  // Human-readable identifier (Preserved even if account is deleted)
   adminEmail: { 
     type: String, 
     required: true,
@@ -25,13 +23,13 @@ const activityLogSchema = new mongoose.Schema({
   action: { 
     type: String, 
     required: true,
-    uppercase: true // Standardizes "LOGIN" vs "login"
+    uppercase: true 
   },
 
-  // Logic Classification (Enables targeted auditing)
+  // Logic Classification (Aligned for Frontend Filtering)
   category: {
     type: String,
-    enum: ['SECURITY', 'EVENT_MGMT', 'CONTENT', 'USER_MGMT', 'SYSTEM'],
+    enum: ['AUTH', 'EVENT', 'ANNOUNCEMENT', 'TEAM', 'MEMBERSHIP', 'SYSTEM'],
     default: 'SYSTEM'
   },
 
@@ -50,22 +48,28 @@ const activityLogSchema = new mongoose.Schema({
     type: String 
   }
 }, { 
-  // Disable updates to logs for data integrity (Logs should only be Created/Read)
+  // DATA INTEGRITY: Logs are immutable (Created and Read only)
   timestamps: { createdAt: true, updatedAt: false },
   versionKey: false
 });
 
 /**
  * @section Performance & Intelligence Indexing
- * Optimized for the Admin Logs dashboard to fetch recent data instantly.
+ * Optimized for the Admin Logs dashboard.
  */
-// Rapid retrieval of the most recent security events
 activityLogSchema.index({ createdAt: -1 });
-
-// Efficient filtering by specific administrator
 activityLogSchema.index({ adminEmail: 1 });
-
-// Filtering by action type (e.g., viewing all "PASSWORD_CHANGE" actions)
 activityLogSchema.index({ action: 1 });
+
+// PRE-SAVE HOOK: Automatically assign category based on action prefix
+activityLogSchema.pre('save', function(next) {
+    const action = this.action;
+    if (action.includes('LOGIN') || action.includes('SECURITY')) this.category = 'AUTH';
+    else if (action.includes('EVENT')) this.category = 'EVENT';
+    else if (action.includes('ANNOUNCEMENT')) this.category = 'ANNOUNCEMENT';
+    else if (action.includes('TEAM')) this.category = 'TEAM';
+    else if (action.includes('MEMBERSHIP') || action.includes('AUTHORITY')) this.category = 'MEMBERSHIP';
+    next();
+});
 
 module.exports = mongoose.model("ActivityLog", activityLogSchema);

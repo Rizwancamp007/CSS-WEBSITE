@@ -4,7 +4,7 @@ const {
     createRegistration, 
     getAllRegistrations,
     exportRegistrations,
-    deleteRegistration // Synchronized with hardened controller
+    deleteRegistration 
 } = require("../controllers/registrationController");
 const { protect, authorize } = require("../middleware/authMiddleware");
 
@@ -12,34 +12,32 @@ const { protect, authorize } = require("../middleware/authMiddleware");
  * @section Public Enrollment Frequency
  * Open frequency for students to register for active missions.
  */
-// POST /api/register -> Initial registration submission
+// Path: POST /api/register
 router.post("/", createRegistration);
 
 
 /**
  * @section Administrative Oversight (Restricted)
- * Endpoints require specific clearance levels to access student PII 
- * (Personally Identifiable Information).
+ * Strict RBAC enforcement for student PII access.
  */
 
-// Registry Access: View all participant entries
-// Powers the 'Registrations' count on the Dashboard
-router.get("/all", 
-    protect, 
-    authorize("canViewRegistrations"), 
-    getAllRegistrations
-);
-
-// Data Extraction: Generate CSV/Excel ledger
-// Higher clearance [canExportData] required for bulk data handling
+// Data Extraction: GET /api/register/export
+// PRODUCTION SYNC: Placed ABOVE /all and /:id to prevent routing collisions
 router.get("/export", 
     protect, 
     authorize("canExportData"), 
     exportRegistrations
 );
 
-// Record Purge: Remove a specific enrollment entry
-// Logic includes automated registrationCount decrement in the controller
+// Registry Access: GET /api/register/all
+router.get("/all", 
+    protect, 
+    authorize("canViewRegistrations"), 
+    getAllRegistrations
+);
+
+// Record Purge: DELETE /api/register/:id
+// Controller automatically syncs the registrationCount on the Event model
 router.delete("/:id", 
     protect, 
     authorize("canViewRegistrations"), 

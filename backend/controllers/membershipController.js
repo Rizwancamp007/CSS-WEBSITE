@@ -4,19 +4,24 @@ const ActivityLog = require("../models/ActivityLog");
 
 /**
  * @helper Internal Audit Protocol
- * Captures the operator identity for the membership registry logs.
+ * Hardened IP detection for production environments (Render/Vercel).
  */
 const logAction = async (adminId, action, details, req) => {
     try {
         const user = await Admin.findById(adminId) || await Membership.findById(adminId);
         const email = user ? (user.email || user.gmail) : "SYSTEM_NODE";
 
+        // LIVE FIX: Improved IP detection for proxied cloud hosting
+        const ip = req.headers['x-forwarded-for']?.split(',')[0] || 
+                   req.connection.remoteAddress || 
+                   req.socket.remoteAddress;
+
         await ActivityLog.create({
             adminId,
             adminEmail: email,
             action: action.toUpperCase(),
             details,
-            ipAddress: req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress,
+            ipAddress: ip,
             userAgent: req.headers["user-agent"]
         });
     } catch (err) {
@@ -30,17 +35,16 @@ const logAction = async (adminId, action, details, req) => {
 
 /**
  * @desc Public: Submit Membership Application
- * Hardened with case-normalization to prevent identifier bypass.
+ * Normalized to prevent duplicate entries like '22-CS-01' and '22-cs-01'.
  */
 exports.applyForMembership = async (req, res) => {
   try {
     const { fullName, rollNo, department, semester, gmail, phoneNumber, applyingRole } = req.body;
 
-    // Normalization: Prevent bypass via '22-CS-01' vs '22-cs-01'
     const normalizedRoll = rollNo?.toUpperCase().trim();
     const normalizedGmail = gmail?.toLowerCase().trim();
 
-    // Collision Check: Prevent duplicate entries in the database
+    // Check for existing node to prevent database pollution
     const existing = await Membership.findOne({ 
         $or: [{ rollNo: normalizedRoll }, { gmail: normalizedGmail }] 
     });
@@ -77,16 +81,13 @@ exports.applyForMembership = async (req, res) => {
 // ==========================================
 
 /**
- * @desc Admin: Get all applications (Approved or Pending)
- * Standardized response to fix the Dashboard 'Authority Mgr' count.
+ * @desc Admin: Get all applications
  */
 exports.getAllMemberships = async (req, res) => {
   try {
-    // Fetch full history sorted by most recent
     const memberships = await Membership.find().sort({ createdAt: -1 });
     
-    // FIXED: Wrapped in data object for frontend dashboard compatibility
-    // This allows dashboard.jsx to access result.data.length correctly
+    // PRODUCTION STABILITY: Wrapped for Dashboard.jsx compatibility
     res.json({ 
         success: true, 
         data: memberships 
@@ -102,7 +103,6 @@ exports.getAllMemberships = async (req, res) => {
 
 /**
  * @desc Admin: Delete Member/Application
- * Logs the purge action to the Audit Trail.
  */
 exports.deleteMember = async (req, res) => {
   try {
@@ -114,7 +114,6 @@ exports.deleteMember = async (req, res) => {
     const identity = `${target.fullName} (${target.rollNo})`;
     await target.deleteOne();
 
-    // CRITICAL: Forensic logging of the wipe operation
     await logAction(req.user.id, "MEMBERSHIP_PURGE", `Permanently removed node: ${identity}`, req);
 
     res.json({ success: true, message: "Record successfully purged from registry." });

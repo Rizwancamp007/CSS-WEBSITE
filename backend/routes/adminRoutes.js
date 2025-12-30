@@ -15,11 +15,9 @@ const { protect, authorize } = require("../middleware/authMiddleware");
 
 /**
  * @helper SuperAdmin Guard (Level 0 Clearance)
- * Only allows the master node defined in environment variables to access 
- * high-sensitivity system logs and permission controls.
+ * Prevents non-master nodes from accessing forensic logs or authority settings.
  */
 const superAdminOnly = (req, res, next) => {
-    // Normalizing environment variable and current user email for strict comparison
     const MASTER_EMAIL = (process.env.MASTER_ADMIN_EMAIL || "css@gmail.com").toLowerCase().trim();
     const currentUserEmail = (req.user?.email || "").toLowerCase().trim();
 
@@ -28,7 +26,7 @@ const superAdminOnly = (req, res, next) => {
     } else {
         res.status(403).json({ 
             success: false, 
-            message: "RESTRICTED: Level 0 Clearance Required for this operation." 
+            message: "RESTRICTED: Level 0 Clearance Required." 
         });
     }
 };
@@ -37,45 +35,39 @@ const superAdminOnly = (req, res, next) => {
 // 1. AUTHENTICATION & IDENTITY
 // ==========================================
 
-// Public Gateway: Admin/Board login transmission
+// Public Gateway: Handshake for Admin/Board login
 router.post("/login", adminLogin);
 
-// Public Gateway: Board member account activation via secure token
+// Public Gateway: Board activation (Syncs with /activate on frontend)
 router.post("/setup-password", setupAdminPassword);
 
-// Private Node: Retrieve current operator profile
+// Private Node: Identity retrieval
 router.get("/profile", protect, getAdminProfile);
 
-// Private Node: Update administrative access credentials
+// Private Node: Credential rotation
 router.put("/change-password", protect, changePassword);
 
 // ==========================================
 // 2. INQUIRY SYSTEM (COMMUNICATIONS)
 // ==========================================
 
-// Public Uplink: Submit contact/inquiry data
+// Public Uplink: Student contact submission
 router.post("/messages/public", submitPublicMessage);
 
-// Restricted: View incoming inquiries (SuperAdmin Only)
-router.get("/messages", protect, authorize("isAdmin"), superAdminOnly, getMessages);
+// Restricted: SuperAdmin Inquiry Management
+router.get("/messages", protect, superAdminOnly, getMessages);
 
-// Restricted: Update inquiry status (SuperAdmin Only)
-router.patch("/messages/:id", protect, authorize("isAdmin"), superAdminOnly, markMessageRead);
+// Restricted: Status modification
+router.patch("/messages/:id", protect, superAdminOnly, markMessageRead);
 
 // ==========================================
 // 3. SYSTEM AUTHORITY & FORENSICS
 // ==========================================
 
-/**
- * @section Permission Sync
- * Only the Master Admin can modify the clearance levels of other board members.
- */
-router.patch("/permissions/:id", protect, authorize("isAdmin"), superAdminOnly, updateMemberPermissions);
+// Restricted: Master Admin only can sync permissions
+router.patch("/permissions/:id", protect, superAdminOnly, updateMemberPermissions);
 
-/**
- * @section Forensic Logs
- * Only the Master Admin can view the global administrative activity ledger.
- */
-router.get("/logs", protect, authorize("isAdmin"), superAdminOnly, getActivityLogs);
+// Restricted: Master Admin only can access audit trail
+router.get("/logs", protect, superAdminOnly, getActivityLogs);
 
 module.exports = router;

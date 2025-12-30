@@ -2,8 +2,7 @@ const mongoose = require("mongoose");
 
 /**
  * @description Mission Control: Event Schema
- * Manages society activities, technical symposiums, and elite hackathons.
- * Integrated with capacity management and automated status transitions.
+ * Manages society activities with automated status transitions and capacity safeguards.
  */
 const eventSchema = new mongoose.Schema({
   title: { 
@@ -23,10 +22,10 @@ const eventSchema = new mongoose.Schema({
     required: true 
   },
 
-  // Visual asset link
+  // Visual asset link - Standardized for cloud/local storage
   image: { 
     type: String, 
-    default: "/assets/images/placeholder.jpg" 
+    default: "https://placehold.co/600x400/020617/FFD700?text=GCU+CSS+EVENT" 
   },
 
   location: { 
@@ -64,10 +63,18 @@ const eventSchema = new mongoose.Schema({
     default: false 
   },
 
-  // AUTHOR IDENTITY (Polymorphic)
+  // AUTHOR IDENTITY (Polymorphic Refined)
+  // Ensures populate() works for both Master Admin and Executive Board members
   createdBy: { 
     type: mongoose.Schema.Types.ObjectId,
-    required: true
+    required: true,
+    refPath: 'creatorModel'
+  },
+  creatorModel: {
+    type: String,
+    required: true,
+    enum: ['Admin', 'Membership'],
+    default: 'Admin'
   }
 }, { 
   timestamps: true,
@@ -77,7 +84,6 @@ const eventSchema = new mongoose.Schema({
 
 /**
  * @section Virtual Logic
- * Dynamically calculates if slots are available without a separate DB query.
  */
 eventSchema.virtual('isFull').get(function() {
   if (this.maxParticipants === 0) return false;
@@ -86,7 +92,6 @@ eventSchema.virtual('isFull').get(function() {
 
 /**
  * @section Automation Middleware
- * Ensures the status is synchronized with the temporal dimension before saving.
  */
 eventSchema.pre('save', function(next) {
   const now = new Date();
@@ -107,9 +112,7 @@ eventSchema.pre('save', function(next) {
 /**
  * @section Performance & Intelligence Indexing
  */
-// Optimized for "Upcoming Events" feed on Home/Events pages
 eventSchema.index({ date: 1, status: 1 });
-// Optimized for Admin Archive views
 eventSchema.index({ isArchived: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Event", eventSchema);

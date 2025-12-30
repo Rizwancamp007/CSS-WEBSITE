@@ -4,86 +4,40 @@ const crypto = require("crypto");
 
 /**
  * @description Society Membership & Executive Board Schema
- * Manages the transition from public applicant to authorized administrative node.
- * Hardened with Role-Based Access Control (RBAC) and secure activation protocols.
+ * Manages the lifecycle from public applicant to authorized board member.
  */
 const membershipSchema = new mongoose.Schema({
   // --- CORE IDENTITY ---
-  fullName: { 
-    type: String, 
-    required: true, 
-    trim: true 
-  },
-  rollNo: { 
-    type: String, 
-    required: true, 
-    unique: true, 
-    uppercase: true,
-    trim: true 
-  },
-  department: { 
-    type: String, 
-    required: true,
-    trim: true 
-  },
-  semester: { 
-    type: String, 
-    required: true 
-  },
-  gmail: { 
-    type: String, 
-    required: true, 
-    unique: true, 
-    lowercase: true, 
-    trim: true 
-  },
-  phoneNumber: { 
-    type: String, 
-    required: true,
-    trim: true 
-  },
+  fullName: { type: String, required: true, trim: true },
+  rollNo: { type: String, required: true, unique: true, uppercase: true, trim: true },
+  department: { type: String, required: true, trim: true },
+  semester: { type: String, required: true },
+  gmail: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  phoneNumber: { type: String, required: true, trim: true },
 
   // --- ADMINISTRATIVE TRANSITION ---
-  applyingRole: { 
-    type: String, 
-    required: true 
-  }, 
+  applyingRole: { type: String, required: true }, 
   role: { 
     type: String, 
-    default: "Applicant" // Transitions to "Executive Board" on approval
+    default: "Applicant" // Transitions to "Executive Board" via middleware
   },
-  approved: { 
-    type: Boolean, 
-    default: false 
-  },
+  approved: { type: Boolean, default: false },
   
   // --- SECURITY INFRASTRUCTURE ---
-  isActivated: { 
-    type: Boolean, 
-    default: false 
-  },
-  activationToken: { 
-    type: String 
-  },
+  isActivated: { type: Boolean, default: false },
+  activationToken: { type: String },
+  activationExpire: { type: Date }, // PRODUCTION ADDITION: Token expiration
   password: { 
     type: String,
-    select: false // Protected: Must use .select("+password") in controllers to verify
+    select: false 
   },
 
   // --- BRUTE-FORCE SHIELD ---
-  loginAttempts: { 
-    type: Number, 
-    default: 0 
-  },
-  lockUntil: { 
-    type: Number 
-  },
+  loginAttempts: { type: Number, default: 0 },
+  lockUntil: { type: Number },
 
-  // --- CLEARANCE LEVEL VERSIONING ---
-  tokenVersion: {
-    type: Number,
-    default: 0
-  },
+  // --- SESSION VERSIONING ---
+  tokenVersion: { type: Number, default: 0 },
 
   // --- PERMISSION MATRIX (RBAC) ---
   permissions: {
@@ -104,19 +58,18 @@ const membershipSchema = new mongoose.Schema({
 
 /**
  * @description Secure Activation Logic
- * Generates a one-time token for the board member to set their password.
+ * Generates a one-time token valid for 24 hours.
  */
 membershipSchema.methods.createActivationToken = function() {
   const token = crypto.randomBytes(32).toString("hex");
-  // Store hashed version for security, return plain version for the link
   this.activationToken = crypto.createHash("sha256").update(token).digest("hex");
+  
+  // PRODUCTION ADDITION: Set expiration to 24 hours from now
+  this.activationExpire = Date.now() + 24 * 60 * 60 * 1000;
+  
   return token; 
 };
 
-/**
- * @description Identity Verification Protocol
- * Compares plain text attempt with stored cryptographic hash.
- */
 membershipSchema.methods.matchPassword = async function (enteredPassword) {
   if (!this.password) return false;
   return await bcrypt.compare(enteredPassword, this.password);
@@ -126,14 +79,14 @@ membershipSchema.methods.matchPassword = async function (enteredPassword) {
  * @section Middlewares
  */
 membershipSchema.pre("save", async function (next) {
-  // 1. Password Encryption Sequence
+  // 1. Password Encryption
   if (this.password && this.isModified("password")) {
     const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);
-    this.tokenVersion += 1; // Invalidate current sessions
+    this.tokenVersion += 1; 
   }
   
-  // 2. Automated Role Transition
+  // 2. Automated Role Transition (Hardened)
   if (this.approved && this.role === "Applicant") {
     this.role = "Executive Board";
   }
@@ -141,9 +94,6 @@ membershipSchema.pre("save", async function (next) {
   next();
 });
 
-/**
- * @section Indexing
- */
 membershipSchema.index({ rollNo: 1, gmail: 1 });
 membershipSchema.index({ approved: 1, isActivated: 1 });
 

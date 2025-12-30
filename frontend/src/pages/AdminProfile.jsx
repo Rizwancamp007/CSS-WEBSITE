@@ -1,34 +1,34 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext"; // FIXED: Integrated Centralized Auth
+import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
-import { API_URL } from "../App";
+import { updatePassword as updatePasswordApi } from "../api"; // FIXED: Use centralized API
 
 /**
  * @description Account Security (Profile Terminal)
  * Hardened for operator identity management and credential rotation.
- * Features Permission Matrix visualization and encrypted handshake logic.
  */
 export default function AdminProfile() {
-  const { user } = useAuth(); // FIXED: Reading identity from context
+  const { user } = useAuth();
   const [passwords, setPasswords] = useState({ old: "", new: "", confirm: "" });
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const token = localStorage.getItem("token"); // Unified token key
+
+  // MASTER IDENTITY SYNC
+  const MASTER_EMAIL = import.meta.env.VITE_MASTER_ADMIN_EMAIL || "css@gmail.com";
+  const isMaster = user?.email?.toLowerCase() === MASTER_EMAIL.toLowerCase();
 
   /**
    * @section Credential Rotation Protocol
-   * Performs the secure update of the administrative access key.
    */
   const handleChangePass = async (e) => {
     e.preventDefault();
     
-    // Transmission Validations
     if (passwords.new !== passwords.confirm) {
         return toast.error("Handshake Failed: New passwords do not match.");
     }
-    if (passwords.new.length < 8) { // Hardened to 8 characters for security
+    if (passwords.new.length < 8) {
         return toast.error("SECURITY RISK: Access key must be at least 8 characters.");
     }
     
@@ -36,31 +36,21 @@ export default function AdminProfile() {
     const loadToast = toast.loading("Encrypting New Access Key...");
     try {
       /**
-       * BACKEND HANDSHAKE:
-       * Synchronized with AdminController -> changePassword
+       * BACKEND HANDSHAKE: PUT /api/admin/change-password
+       * Centralized Axios handles token injection and error parsing.
        */
-      const res = await fetch(`${API_URL}/admin/change-password`, {
-        method: "PUT",
-        headers: { 
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({ 
-            oldPassword: passwords.old, 
-            newPassword: passwords.new 
-        })
+      const res = await updatePasswordApi({ 
+          oldPassword: passwords.old, 
+          newPassword: passwords.new 
       });
 
-      const data = await res.json();
-
-      if (res.ok) {
+      if (res.data?.success) {
         toast.success("Security Credentials Updated Successfully.", { id: loadToast });
         setPasswords({ old: "", new: "", confirm: "" });
-      } else {
-        toast.error(data.message || "Credential Update Failed", { id: loadToast });
       }
     } catch (err) {
-      toast.error("COMMUNICATION ERROR: Mainframe link unstable.", { id: loadToast });
+      const msg = err.response?.data?.message || "Credential Update Failed";
+      toast.error(msg, { id: loadToast });
     } finally {
       setLoading(false);
     }
@@ -69,7 +59,7 @@ export default function AdminProfile() {
   return (
     <div className="min-h-screen bg-[#020617] text-white p-6 pt-32 font-sans relative overflow-x-hidden selection:bg-yellow-500/30">
       
-      {/* --- GRID INFRASTRUCTURE --- */}
+      {/* Background Infrastructure */}
       <div className="fixed inset-0 z-0 bg-[linear-gradient(to_right,#FFD70008_1px,transparent_1px),linear-gradient(to_bottom,#FFD70008_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
       
       <div className="max-w-4xl mx-auto relative z-10">
@@ -86,7 +76,7 @@ export default function AdminProfile() {
           </motion.div>
 
           <motion.button 
-            whileHover={{ scale: 1.05, borderColor: 'rgba(59,130,246,0.5)' }}
+            whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => navigate("/admin-dashboard")}
             className="group flex items-center gap-3 px-8 py-3 rounded-2xl bg-slate-900 border border-slate-800 text-[10px] font-black uppercase tracking-widest hover:border-blue-500/40 transition-all shadow-2xl"
@@ -110,22 +100,31 @@ export default function AdminProfile() {
             <div className="space-y-6">
               <div className="group">
                 <p className="text-[9px] text-blue-500 font-black uppercase tracking-widest mb-1 opacity-60">Full Name</p>
-                <p className="text-xl font-black tracking-tight uppercase">{user?.fullName || "Admin Node"}</p>
+                <div className="flex items-center gap-3">
+                    <p className="text-xl font-black tracking-tight uppercase">{user?.fullName || user?.name || "Admin Node"}</p>
+                    {isMaster && <span className="px-2 py-0.5 rounded-md bg-[#FFD700]/10 border border-[#FFD700]/20 text-[7px] font-black text-[#FFD700]">LEVEL_0</span>}
+                </div>
               </div>
               <div className="group">
                 <p className="text-[9px] text-blue-500 font-black uppercase tracking-widest mb-1 opacity-60">Email Uplink</p>
-                <p className="text-slate-400 font-mono text-sm">{user?.email}</p>
+                <p className="text-slate-400 font-mono text-sm">{user?.email || user?.gmail}</p>
               </div>
               <div className="pt-6 border-t border-slate-800/50">
                  <p className="text-[9px] text-slate-600 font-black uppercase tracking-widest mb-4">Authority Clearances</p>
                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(user?.permissions || {}).map(([key, val]) => (
-                        val && (
-                          <span key={key} className="px-3 py-1.5 bg-blue-500/5 border border-blue-500/20 rounded-xl text-[8px] font-black text-blue-400 uppercase tracking-widest">
-                            {key.replace(/([A-Z])/g, ' $1').trim()}
-                          </span>
-                        )
-                    ))}
+                    {isMaster ? (
+                        <span className="px-3 py-1.5 bg-[#FFD700]/5 border border-[#FFD700]/20 rounded-xl text-[8px] font-black text-[#FFD700] uppercase tracking-widest">
+                            Global Master Access
+                        </span>
+                    ) : (
+                        Object.entries(user?.permissions || {}).map(([key, val]) => (
+                            val && (
+                              <span key={key} className="px-3 py-1.5 bg-blue-500/5 border border-blue-500/20 rounded-xl text-[8px] font-black text-blue-400 uppercase tracking-widest">
+                                {key.replace(/([A-Z])/g, ' $1').trim()}
+                              </span>
+                            )
+                        ))
+                    )}
                  </div>
               </div>
             </div>

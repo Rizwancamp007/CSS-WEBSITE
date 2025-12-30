@@ -14,12 +14,17 @@ const logAdminAction = async (adminId, action, details, req) => {
         const user = await Admin.findById(adminId) || await Membership.findById(adminId);
         const email = user ? (user.email || user.gmail) : "UNKNOWN_OPERATOR";
 
+        // LIVE FIX: Improved IP detection for Render/Cloud environments
+        const ip = req.headers['x-forwarded-for']?.split(',')[0] || 
+                   req.connection.remoteAddress || 
+                   req.socket.remoteAddress;
+
         await ActivityLog.create({
             adminId,
             adminEmail: email,
             action: action.toUpperCase(),
             details,
-            ipAddress: req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress,
+            ipAddress: ip,
             userAgent: req.headers["user-agent"]
         });
     } catch (err) {
@@ -45,17 +50,16 @@ exports.adminLogin = async (req, res) => {
     const { password } = req.body;
 
     try {
-        // CRITICAL FIX: Explicitly .select("+password") to override the model's hidden default
+        // Search Hierarchy: Check Primary Admins first
         let user = await Admin.findOne({ email }).select("+password");
         let isMembershipAccount = false;
 
         if (!user) {
-            // Fallback: Search Society Board Members with explicit password selection
+            // Fallback: Search Society Board Members
             user = await Membership.findOne({ gmail: email }).select("+password");
             isMembershipAccount = true;
         }
 
-        // Identity Validation
         if (!user) {
             return res.status(401).json({ 
                 success: false, 
@@ -63,7 +67,6 @@ exports.adminLogin = async (req, res) => {
             });
         }
 
-        // Brute-force Shield check
         if (user.lockUntil && user.lockUntil > Date.now()) {
             return res.status(423).json({ 
                 success: false, 
@@ -71,24 +74,21 @@ exports.adminLogin = async (req, res) => {
             });
         }
 
-        // Security Guard: Board Member Status Verification
         if (isMembershipAccount) {
             if (!user.approved) {
                 return res.status(403).json({ 
                     success: false, 
-                    message: "Access Denied: Membership node not yet approved by Master Admin." 
+                    message: "Access Denied: Membership node not yet approved." 
                 });
             }
             if (!user.isActivated) {
                 return res.status(403).json({ 
                     success: false, 
-                    message: "Access Denied: Account node not activated. Use activation link." 
+                    message: "Access Denied: Account node not activated." 
                 });
             }
         }
 
-        // Cryptographic Key Comparison
-        // Now works because 'user.password' is actually populated in the object
         if (await user.matchPassword(password)) {
             user.loginAttempts = 0;
             user.lockUntil = undefined;
@@ -114,7 +114,6 @@ exports.adminLogin = async (req, res) => {
                 token: generateToken(user._id),
             });
         } else {
-            // Brute-force Tracking
             user.loginAttempts = (user.loginAttempts || 0) + 1;
             if (user.loginAttempts >= 5) {
                 user.lockUntil = Date.now() + 30 * 60 * 1000; 
@@ -127,7 +126,7 @@ exports.adminLogin = async (req, res) => {
         }
     } catch (error) {
         console.error("LOGIN_ERROR:", error);
-        res.status(500).json({ success: false, message: "Internal Systems Error during handshake." });
+        res.status(500).json({ success: false, message: "Internal Systems Error." });
     }
 };
 
@@ -162,7 +161,7 @@ exports.changePassword = async (req, res) => {
         await user.save(); 
 
         await logAdminAction(user._id, "SECURITY_UPDATE", "Access credentials modified.", req);
-        res.json({ success: true, message: "Security protocols updated. New credentials active." });
+        res.json({ success: true, message: "Security protocols updated." });
     } catch (error) {
         res.status(500).json({ success: false, message: "Encryption sequence failure." });
     }
@@ -194,7 +193,8 @@ exports.updateMemberPermissions = async (req, res) => {
         res.json({ 
             success: true, 
             message: "Clearance level synchronized.", 
-            activationLink: clearToken ? `/activate?token=${clearToken}` : null 
+            // FIXED: Standardized link for Vercel consumption
+            activationLink: clearToken ? `/setup-board-password?token=${clearToken}` : null 
         });
     } catch (error) {
         res.status(500).json({ success: false, message: "Authority synchronization failed." });
@@ -211,16 +211,16 @@ exports.getActivityLogs = async (req, res) => {
 };
 
 // ==========================================
-// 4. COMMUNICATIONS (CONTACT)
+// 4. COMMUNICATIONS & ACTIVATION
 // ==========================================
 
 exports.submitPublicMessage = async (req, res) => {
     try {
         const { name, email, subject, message } = req.body;
         await Contact.create({ name, email, subject, message });
-        res.status(201).json({ success: true, message: "Transmission received and logged." });
+        res.status(201).json({ success: true, message: "Transmission received." });
     } catch (error) {
-        res.status(400).json({ success: false, message: "Transmission failed. Check parameters." });
+        res.status(400).json({ success: false, message: "Transmission failed." });
     }
 };
 
@@ -236,8 +236,8 @@ exports.getMessages = async (req, res) => {
 exports.markMessageRead = async (req, res) => {
     try {
         await Contact.findByIdAndUpdate(req.params.id, { isRead: true });
-        await logAdminAction(req.user.id, "INQUIRY_PROTOCOL", `Marked inquiry ${req.params.id} as read.`, req);
-        res.json({ success: true, message: "Status updated to READ." });
+        await logAdminAction(req.user.id, "INQUIRY_PROTOCOL", `Marked inquiry ${req.params.id} read.`, req);
+        res.json({ success: true, message: "Status updated." });
     } catch (error) {
         res.status(500).json({ success: false, message: "Update failure." });
     }
@@ -255,15 +255,15 @@ exports.setupAdminPassword = async (req, res) => {
             isActivated: false 
         });
 
-        if (!member) return res.status(404).json({ success: false, message: "Activation token invalid or node already active." });
+        if (!member) return res.status(404).json({ success: false, message: "Activation token invalid." });
 
         member.password = password; 
         member.isActivated = true;
         member.activationToken = undefined;
         await member.save();
 
-        res.json({ success: true, message: "Node Activation Complete. Access Granted." });
+        res.json({ success: true, message: "Node Activation Complete." });
     } catch (error) {
-        res.status(500).json({ success: false, message: "Activation failure sequence." });
+        res.status(500).json({ success: false, message: "Activation failure." });
     }
 };

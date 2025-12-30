@@ -8,7 +8,7 @@ import { useAuth } from "./context/AuthContext";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 
-// Public Pages
+// Public Terminal Pages
 import Home from "./pages/Home";
 import Events from "./pages/Events";
 import Team from "./pages/Team";
@@ -20,7 +20,7 @@ import Membership from "./pages/Membership";
 import ActivateAccount from "./pages/ActivateAccount"; 
 import NotFound from "./pages/NotFound";
 
-// Admin Pages
+// Administrative Grid Pages
 import AdminLogin from "./pages/AdminLogin";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminEvents from "./pages/AdminEvents";
@@ -40,26 +40,24 @@ function ScrollToTop() {
   useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
   return null;
 }
-export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 /**
  * @section AUTHENTICATION GUARD
- * Hardened to use the AuthContext state for real-time security.
+ * High-clearance gatekeeper for the administrative grid.
  */
 const ProtectedRoute = ({ children, requireSuperAdmin = false }) => {
-  const { user, loading, hasPermission } = useAuth();
+  const { user, loading } = useAuth();
   const location = useLocation();
 
-  if (loading) return null; // Wait for session verification
+  if (loading) return null; // Prevent flicker during session handshake
 
-  // 1. Check if authenticated
   if (!user) {
     return <Navigate to="/admin" state={{ from: location }} replace />;
   }
 
-  // 2. Check for Master/SuperAdmin Clearance if required
-  // Route check for sensitive logs and authority management
-  if (requireSuperAdmin && user.email !== "css@gmail.com" && !user.isSuperAdmin) {
+  // SuperAdmin Logic: Check against master identity
+  const MASTER_EMAIL = import.meta.env.VITE_MASTER_ADMIN_EMAIL || "css@gmail.com";
+  if (requireSuperAdmin && user.email?.toLowerCase() !== MASTER_EMAIL.toLowerCase()) {
     return <Navigate to="/admin-dashboard" replace />;
   }
 
@@ -72,18 +70,17 @@ const ProtectedRoute = ({ children, requireSuperAdmin = false }) => {
 function AppContent() {
   const location = useLocation();
   
-  // Detect if current path is part of the Administrative Grid
-  const isAdminInternal = location.pathname.startsWith("/admin-dashboard") || 
-                          location.pathname.startsWith("/admin/") || 
-                          location.pathname === "/all-registrations";
+  // Grid detection for UI suppression
+  const isAdminPath = location.pathname.startsWith("/admin") || 
+                     location.pathname === "/all-registrations";
 
   const isLoginPage = location.pathname === "/admin";
 
   return (
-    <div className={`min-h-screen ${isAdminInternal ? 'admin-theme bg-[#020617]' : 'grid-bg'}`}>
+    <div className={`min-h-screen ${isAdminPath ? 'bg-[#020617]' : 'grid-bg'}`}>
       
-      {/* Navbar/Footer hidden on Admin Dashboard for industrial focus */}
-      {!isAdminInternal && !isLoginPage && <Navbar />}
+      {/* Suppress standard UI during administrative operations */}
+      {!isAdminPath && <Navbar />}
       
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
@@ -94,7 +91,7 @@ function AppContent() {
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/announcements" element={<Announcements />} />
-          <Route path="/register/:id" element={<Register />} />
+          <Route path="/register/:eventId?" element={<Register />} />
           <Route path="/membership" element={<Membership />} />
           <Route path="/activate" element={<ActivateAccount />} />
 
@@ -109,17 +106,17 @@ function AppContent() {
           <Route path="/admin/profile" element={<ProtectedRoute><AdminProfile /></ProtectedRoute>} />
           <Route path="/all-registrations" element={<ProtectedRoute><Registrations /></ProtectedRoute>} />
 
-          {/* --- LEVEL 0 (ROOT) RESTRICTED ROUTES --- */}
-          <Route path="/admin/messages" element={<ProtectedRoute requireSuperAdmin={true}><AdminMessages /></ProtectedRoute>} />
-          <Route path="/admin/logs" element={<ProtectedRoute requireSuperAdmin={true}><AdminLogs /></ProtectedRoute>} />
-          <Route path="/admin/memberships" element={<ProtectedRoute requireSuperAdmin={true}><AdminMemberships /></ProtectedRoute>} />
+          {/* --- LEVEL 0 RESTRICTED ROUTES --- */}
+          <Route path="/admin/messages" element={<ProtectedRoute requireSuperAdmin><AdminMessages /></ProtectedRoute>} />
+          <Route path="/admin/logs" element={<ProtectedRoute requireSuperAdmin><AdminLogs /></ProtectedRoute>} />
+          <Route path="/admin/memberships" element={<ProtectedRoute requireSuperAdmin><AdminMemberships /></ProtectedRoute>} />
 
           {/* --- 404 UNKNOWN SECTOR --- */}
           <Route path="*" element={<NotFound />} />
         </Routes>
       </AnimatePresence>
 
-      {!isAdminInternal && !isLoginPage && <Footer />}
+      {!isAdminPath && <Footer />}
     </div>
   );
 }
@@ -131,16 +128,18 @@ function App() {
       <Toaster 
         position="top-center" 
         toastOptions={{
-          duration: 3000,
+          duration: 4000,
+          className: 'ironclad-toast',
           style: { 
             background: '#0f172a', 
             color: '#fff', 
-            border: '1px solid rgba(0, 255, 255, 0.2)', // Cyber cyan border
+            border: '1px solid rgba(255, 215, 0, 0.2)',
             textTransform: 'uppercase',
-            fontSize: '10px',
+            fontSize: '9px',
             fontWeight: '900',
-            letterSpacing: '0.1em',
-            fontFamily: 'monospace'
+            letterSpacing: '0.15em',
+            fontFamily: 'monospace',
+            borderRadius: '12px'
           }
         }} 
       />

@@ -1,32 +1,29 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { API_URL } from "../App";
+import { getActivityLogs } from "../api"; // FIXED: Use centralized API
 
 /**
  * @description System Audit Trail (Forensic Terminal)
- * Exclusively for Level 0 (Master Admin) oversight.
- * Hardened for high-density event monitoring and forensic tracking.
+ * Exclusively for Level 0 oversight.
  */
 export default function AdminLogs() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
-  const token = localStorage.getItem("token"); // Unified token key
 
   useEffect(() => {
     const fetchLogs = async () => {
       try {
-        const res = await fetch(`${API_URL}/admin/logs`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const result = await res.json();
-        
+        const res = await getActivityLogs();
         // Data extraction from standardized { success, data } wrapper
-        const logData = result.success ? result.data : (Array.isArray(result) ? result : []);
+        const logData = res.data?.data || [];
         
         // Chronological sort: Newest transmissions first
-        setLogs(logData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+        const sortedLogs = [...logData].sort((a, b) => 
+          new Date(b.createdAt) - new Date(a.createdAt)
+        );
+        setLogs(sortedLogs);
       } catch (err) {
         console.error("LOG_RETRIEVAL_FAILURE: Frequency link unstable.");
       } finally {
@@ -34,13 +31,11 @@ export default function AdminLogs() {
       }
     };
     
-    if (!token) navigate("/admin");
-    else fetchLogs();
-  }, [token, navigate]);
+    fetchLogs();
+  }, []);
 
   /**
    * @section Protocol Styling
-   * Dynamic color coding based on the severity and type of system action.
    */
   const getActionStyle = (action) => {
     switch (action) {
@@ -100,7 +95,6 @@ export default function AdminLogs() {
             <span className="hidden md:block md:col-span-2 text-right">Operator Node</span>
           </div>
 
-          {/* STREAMING LOG CONTENT */}
           <div className="max-h-[65vh] overflow-y-auto custom-scrollbar font-mono text-[11px]">
             {loading ? (
               <div className="p-32 text-center flex flex-col items-center gap-6">
@@ -120,7 +114,6 @@ export default function AdminLogs() {
                     key={log._id || i} 
                     className="p-6 border-b border-slate-800/40 grid grid-cols-12 gap-4 items-center transition-all duration-300 group relative hover:bg-blue-600/[0.03]"
                   >
-                    {/* Visual Anchor Glow */}
                     <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" />
 
                     <span className="col-span-3 md:col-span-2 text-slate-500 text-[10px] font-mono leading-tight">
@@ -154,9 +147,8 @@ export default function AdminLogs() {
           </div>
         </div>
         
-        {/* TERMINAL STATUS BAR */}
         <div className="mt-8 flex items-center justify-between px-6 opacity-30">
-             <p className="text-[8px] font-black uppercase tracking-[0.5em] text-slate-500 italic">Secure Transmission Link // E2E Encrypted</p>
+             <p className="text-[8px] font-black uppercase tracking-[0.5em] text-slate-500 italic">Secure Transmission Link // Forensic Integrity</p>
              <p className="text-[8px] font-black uppercase tracking-[0.5em] text-slate-500">Telemetry Nodes: {logs.length}</p>
         </div>
       </div>
@@ -165,7 +157,6 @@ export default function AdminLogs() {
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #FFD70050; }
       `}</style>
     </div>
   );

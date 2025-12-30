@@ -5,19 +5,24 @@ const ActivityLog = require("../models/ActivityLog");
 
 /**
  * @helper Internal Audit Protocol
- * Records broadcast modifications. Standardized for human-readable audit trails.
+ * Records broadcast modifications with high-fidelity IP detection for production.
  */
 const logAction = async (adminId, action, details, req) => {
     try {
         const user = await Admin.findById(adminId) || await Membership.findById(adminId);
         const email = user ? (user.email || user.gmail) : "SYSTEM_NODE";
 
+        // LIVE FIX: Hardened IP detection for Render/Vercel proxy environments
+        const ip = req.headers['x-forwarded-for']?.split(',')[0] || 
+                   req.connection.remoteAddress || 
+                   req.socket.remoteAddress;
+
         await ActivityLog.create({
             adminId,
             adminEmail: email,
             action: action.toUpperCase(),
             details,
-            ipAddress: req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress,
+            ipAddress: ip,
             userAgent: req.headers["user-agent"]
         });
     } catch (err) {
@@ -101,10 +106,10 @@ exports.archiveAnnouncement = async (req, res) => {
 
 /**
  * @desc Public Feed Access (Unarchived Only)
- * Optimized for frontend feed rendering.
  */
 exports.getAnnouncements = async (req, res) => {
     try {
+        // Optimized: Sort by date and exclude archived items
         const list = await Announcement.find({ isArchived: false }).sort({ createdAt: -1 });
         res.json({ success: true, data: list });
     } catch (error) {
@@ -114,11 +119,14 @@ exports.getAnnouncements = async (req, res) => {
 
 /**
  * @desc Admin Ledger Access (Full History)
- * Essential for Dashboard 'News & Alerts' total count.
  */
 exports.getAdminAnnouncements = async (req, res) => {
     try {
-        const list = await Announcement.find().sort({ createdAt: -1 });
+        // PRODUCTION ADDITION: Populate creator info for the Admin Dashboard
+        const list = await Announcement.find()
+            .populate('createdBy', 'fullName email gmail')
+            .sort({ createdAt: -1 });
+            
         res.json({ success: true, data: list });
     } catch (error) {
         res.status(500).json({ success: false, message: "Admin registry access failed." });
@@ -137,9 +145,11 @@ exports.deleteAnnouncement = async (req, res) => {
             return res.status(404).json({ success: false, message: "Target already purged." });
         }
 
-        await logAction(req.user.id, "ANNOUNCEMENT_PURGE", `Permanently wiped broadcast: ${announcement.title}`, req);
-        
+        const title = announcement.title; // Cache title before deletion
         await announcement.deleteOne();
+        
+        await logAction(req.user.id, "ANNOUNCEMENT_PURGE", `Permanently wiped broadcast: ${title}`, req);
+        
         res.json({ success: true, message: "Node successfully purged from mainframe." });
     } catch (error) {
         res.status(500).json({ success: false, message: "Purge sequence failed." });

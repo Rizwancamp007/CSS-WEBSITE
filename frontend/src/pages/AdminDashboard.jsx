@@ -3,12 +3,19 @@ import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useAuth } from "../context/AuthContext";
-import { API_URL } from "../App"; 
+// FIXED: Use centralized API functions
+import { 
+  fetchAdminEvents, 
+  fetchAdminAnnouncements, 
+  fetchAdminTeam, 
+  fetchAllMemberships, 
+  fetchInquiries, 
+  getActivityLogs 
+} from "../api";
 
 /**
  * @description Command Center (Dashboard)
- * The primary interface for Society Governance.
- * Features real-time telemetry, permission-based routing, and data visualization.
+ * Hardened for Society Governance with real-time telemetry and RBAC clearance.
  */
 export default function AdminDashboard() {
   const { user, logout, hasPermission } = useAuth();
@@ -17,47 +24,35 @@ export default function AdminDashboard() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  // Master Identity Check
-  const isMaster = user?.email === "css@gmail.com";
+  // Master Identity Check (Synced with Environment)
+  const MASTER_EMAIL = import.meta.env.VITE_MASTER_ADMIN_EMAIL || "css@gmail.com";
+  const isMaster = user?.email?.toLowerCase() === MASTER_EMAIL.toLowerCase();
 
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchTelemetry = async () => {
       try {
-        const token = localStorage.getItem("token");
-        if (!token) return navigate("/admin");
-
-        const headers = { Authorization: `Bearer ${token}` };
+        setLoading(true);
 
         /**
-         * @section Standardized Fetcher
-         * Consumes the hardened { success, data } wrapper from Phase 19-23.
+         * @section Parallel Uplink
+         * Concurrent execution for minimum latency.
          */
-        const fetcher = async (url) => {
-          try {
-            const res = await fetch(url, { headers });
-            if (res.status === 403) return []; // Graceful handling for limited permissions
-            const result = await res.json();
-            return result.success ? (result.data || []) : [];
-          } catch (e) { return []; }
-        };
-
-        // Parallel Data Uplink: Fetches all telemetry in a single burst
-        const [events, members, announce, team, messages, logs] = await Promise.all([
-          fetcher(`${API_URL}/events/admin/all`),
-          isMaster ? fetcher(`${API_URL}/memberships/admin/all`) : Promise.resolve([]),
-          fetcher(`${API_URL}/announcements/admin/all`),
-          fetcher(`${API_URL}/team`),
-          isMaster ? fetcher(`${API_URL}/admin/messages`) : Promise.resolve([]),
-          isMaster ? fetcher(`${API_URL}/admin/logs`) : Promise.resolve([])
+        const [events, announce, team, members, messages, logs] = await Promise.all([
+          fetchAdminEvents().catch(() => ({ data: { data: [] } })),
+          fetchAdminAnnouncements().catch(() => ({ data: { data: [] } })),
+          fetchAdminTeam().catch(() => ({ data: { data: [] } })),
+          isMaster ? fetchAllMemberships().catch(() => ({ data: { data: [] } })) : Promise.resolve({ data: { data: [] } }),
+          isMaster ? fetchInquiries().catch(() => ({ data: { data: [] } })) : Promise.resolve({ data: { data: [] } }),
+          isMaster ? getActivityLogs().catch(() => ({ data: { data: [] } })) : Promise.resolve({ data: { data: [] } })
         ]);
 
         setStats({
-          events: events?.length || 0,
-          memberships: members?.length || 0,
-          announcements: announce?.length || 0,
-          team: team?.length || 0,
-          messages: messages?.length || 0,
-          logs: logs?.length || 0
+          events: events.data?.data?.length || 0,
+          announcements: announce.data?.data?.length || 0,
+          team: team.data?.data?.length || 0,
+          memberships: members.data?.data?.length || 0,
+          messages: messages.data?.data?.length || 0,
+          logs: logs.data?.data?.length || 0
         });
 
       } catch (err) {
@@ -67,8 +62,8 @@ export default function AdminDashboard() {
       }
     };
 
-    fetchStats();
-  }, [isMaster, navigate]);
+    fetchTelemetry();
+  }, [isMaster]);
 
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
@@ -86,7 +81,6 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen bg-[#020617] text-white overflow-x-hidden relative flex flex-col selection:bg-blue-500/30">
       
-      {/* Background Grid Infrastructure */}
       <div className="fixed inset-0 z-0 w-full h-full bg-[linear-gradient(to_right,#FFD70008_1px,transparent_1px),linear-gradient(to_bottom,#FFD70008_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
       
       <div className="relative z-10 w-full max-w-7xl mx-auto px-6 pt-32 pb-20 flex-grow">
@@ -96,18 +90,17 @@ export default function AdminDashboard() {
           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
             <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none italic">Command <span className="text-[#FFD700]">Center</span></h1>
             <p className="text-slate-600 mt-3 text-[10px] font-black uppercase tracking-[0.4em]">
-              Operator: {user?.email || "GUEST_NODE"} // Security: {isMaster ? "LEVEL_0" : "BOARD_MEMBER"}
+              Operator: {user?.name || "UNIDENTIFIED"} // Access: {isMaster ? "LEVEL_0" : "BOARD_MEMBER"}
             </p>
           </motion.div>
           
           <div className="flex items-center gap-3">
-            <Link to="/admin/profile" className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-400 hover:text-[#FFD700] hover:border-[#FFD700]/40 transition-all shadow-xl" title="Node Settings">
+            <Link to="/admin/profile" className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-400 hover:text-[#FFD700] transition-all" title="Security Profile">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
               </svg>
             </Link>
-            <button onClick={() => navigate("/")} className="text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-[#FFD700] transition-colors mr-4">External Link</button>
-            <button onClick={() => { logout(); navigate("/admin"); }} className="px-6 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-[10px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all shadow-xl">Purge Session</button>
+            <button onClick={() => { logout(); navigate("/admin"); }} className="px-6 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-all">Purge Session</button>
           </div>
         </div>
 
@@ -119,23 +112,22 @@ export default function AdminDashboard() {
         ) : (
           <div className="grid gap-8 grid-cols-1 lg:grid-cols-4">
             
-            {/* --- SECTOR CONTROL GRID --- */}
             <div className="lg:col-span-3 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {[
-                { title: "Missions", count: stats.events, link: "/admin/events", icon: "📅", color: "blue", perm: "canManageEvents" },
-                { title: "Broadcasts", count: stats.announcements, link: "/admin/announcements", icon: "📢", color: "amber", perm: "canManageAnnouncements" },
-                { title: "Registrations", count: "LOG", link: "/all-registrations", icon: "📝", color: "teal", perm: "canViewRegistrations" },
-                { title: "Staff Node", count: stats.team, link: "/admin/team", icon: "🎖️", color: "yellow", perm: "canManageTeams" },
-                { title: "Inquiry Node", count: stats.messages, link: "/admin/messages", icon: "📩", color: "emerald", isMasterOnly: true },
-                { title: "Authority Mgr", count: stats.memberships, link: "/admin/memberships", icon: "👥", color: "purple", isMasterOnly: true },
-                { title: "Forensic Logs", count: stats.logs, link: "/admin/logs", icon: "📜", color: "red", isMasterOnly: true },
+                { title: "Missions", count: stats.events, link: "/admin/events", icon: "📅", perm: "canManageEvents" },
+                { title: "Broadcasts", count: stats.announcements, link: "/admin/announcements", icon: "📢", perm: "canManageAnnouncements" },
+                { title: "Registrations", count: "LIST", link: "/all-registrations", icon: "📝", perm: "canViewRegistrations" },
+                { title: "Staff Node", count: stats.team, link: "/admin/team", icon: "🎖️", perm: "canManageTeams" },
+                { title: "Inquiry Node", count: stats.messages, link: "/admin/messages", icon: "📩", isMasterOnly: true },
+                { title: "Authority Mgr", count: stats.memberships, link: "/admin/memberships", icon: "👥", isMasterOnly: true },
+                { title: "Forensic Logs", count: stats.logs, link: "/admin/logs", icon: "📜", isMasterOnly: true },
               ]
                 .filter(item => item.isMasterOnly ? isMaster : hasPermission(item.perm))
                 .map((item, index) => (
                   <Link to={item.link} key={index} className="block group">
                     <motion.div
                       initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                      className={`h-full relative overflow-hidden rounded-[2.5rem] bg-slate-900/40 border border-slate-800 hover:border-[#FFD700]/40 backdrop-blur-xl p-8 transition-all duration-500 shadow-2xl`}
+                      className="h-full relative overflow-hidden rounded-[2.5rem] bg-slate-900/40 border border-slate-800 hover:border-[#FFD700]/40 backdrop-blur-xl p-8 transition-all duration-500 shadow-2xl"
                     >
                       <div className="flex justify-between items-start h-full">
                         <div className="flex flex-col h-full justify-between">
@@ -152,7 +144,6 @@ export default function AdminDashboard() {
                 ))}
             </div>
 
-            {/* --- VISUAL ANALYTICS TERMINAL --- */}
             <div className="lg:col-span-1 bg-slate-950/60 backdrop-blur-3xl border border-slate-800 rounded-[2.5rem] p-8 shadow-3xl h-full flex flex-col">
               <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em] mb-8">Node Distribution</h3>
               <div className="flex-grow w-full" style={{ minHeight: '300px' }}>
@@ -176,7 +167,7 @@ export default function AdminDashboard() {
                 </ResponsiveContainer>
               </div>
               <div className="mt-4 pt-4 border-t border-slate-800 text-center">
-                 <p className="text-[9px] text-slate-700 font-black uppercase tracking-[0.2em] italic">System Status: NOMINAL // Secure Link</p>
+                  <p className="text-[9px] text-slate-700 font-black uppercase tracking-[0.2em] italic">System Status: NOMINAL // Secure Link</p>
               </div>
             </div>
           </div>

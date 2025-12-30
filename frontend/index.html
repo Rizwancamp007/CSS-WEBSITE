@@ -3,26 +3,62 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Computer Science Society - GCU Lahore</title>
+    
+    <title>Computer Science Society | GCU Lahore</title>
+    <meta name="description" content="The premier technical society of GC University Lahore. Empowering future computer scientists through innovation, workshops, and elite hackathons." />
+    
+    <meta property="og:title" content="CSS GCU Lahore | Identity Terminal" />
+    <meta property="og:description" content="Official platform for the Computer Science Society GCU. Access mission logs, events, and institutional alerts." />
+    <meta property="og:image" content="/logo.jpg" />
+    <meta property="og:type" content="website" />
 
-    <!-- Favicon -->
-    <link rel="icon" type="image/png" href="/logo.jpg" />
+    <link rel="icon" type="image/jpg" href="/logo.jpg" />
 
-    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;900&display=swap" rel="stylesheet" />
 
-    <!-- Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              cssGold: '#FFD700',
+              mainframe: '#020617',
+            }
+          }
+        }
+      }
+    </script>
+
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #020617; /* Darker navy for a more premium institutional feel */
+        overflow-x: hidden;
+      }
+      #root {
+        min-height: 100vh;
+      }
+      /* Prevent scroll jump on mount */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #020617;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #1e293b;
+        border-radius: 10px;
+      }
+    </style>
   </head>
-  <body class="bg-[#0f172a] text-white">
+
+  <body class="text-slate-200">
     <div id="root"></div>
 
-    <!-- React will render here -->
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

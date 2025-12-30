@@ -2,13 +2,11 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import EventCard from "../components/EventCard";
 import Skeleton from "../components/Skelton";
-import { API_URL } from "../App"; 
+import { fetchEvents } from "../api"; // FIXED: Centralized API uplink
 
 /**
  * @description Mission Catalog (Events Page)
- * Hardened for real-time telemetry synchronization.
- * Features automated mission categorization (Active vs. History) 
- * and industrial grid aesthetics.
+ * Hardened for real-time telemetry synchronization with automated mission categorization.
  */
 export default function Events() {
   const [upcomingEvents, setUpcomingEvents] = useState([]);
@@ -17,20 +15,32 @@ export default function Events() {
 
   /**
    * @section Mainframe Synchronization
-   * Pulls the public ledger and separates missions based on operational status.
    */
   useEffect(() => {
-    const fetchAllEvents = async () => {
+    const loadAllEvents = async () => {
       try {
-        const res = await fetch(`${API_URL}/events`);
-        const json = await res.json();
+        const res = await fetchEvents();
+        const allData = res.data?.data || [];
         
-        // Data Extraction: Supports standardized { success, data } wrapper
-        const allData = json.data || (Array.isArray(json) ? json : []);
-        
-        // Protocol: Filter operational status locally for layout integrity
-        setUpcomingEvents(allData.filter(e => e.status === "upcoming"));
-        setPastEvents(allData.filter(e => e.status === "completed" || e.status === "past"));
+        const now = new Date();
+
+        /**
+         * @section Auto-Categorization Protocol
+         * Logic: Upcoming if status is 'upcoming' AND date is in the future.
+         * Otherwise, it's moved to Archives for historical integrity.
+         */
+        const upcoming = allData.filter(e => {
+          const eventDate = new Date(e.date);
+          return e.status === "upcoming" && eventDate >= now;
+        });
+
+        const history = allData.filter(e => {
+          const eventDate = new Date(e.date);
+          return e.status !== "upcoming" || eventDate < now;
+        });
+
+        setUpcomingEvents(upcoming);
+        setPastEvents(history);
         
       } catch (error) {
         console.error("MISSION_UPLINK_FAILURE: Connection interrupted.");
@@ -38,20 +48,16 @@ export default function Events() {
         setLoading(false);
       }
     };
-    fetchAllEvents();
+    loadAllEvents();
   }, []);
 
   const formatDate = (dateString) => {
     if (!dateString) return "NODE_TBD";
-    try {
-      return new Date(dateString).toLocaleDateString('en-GB', { 
-        day: 'numeric', 
-        month: 'short', 
-        year: 'numeric' 
-      });
-    } catch (e) {
-      return "DATE_PENDING";
-    }
+    return new Date(dateString).toLocaleDateString('en-GB', { 
+      day: 'numeric', 
+      month: 'short', 
+      year: 'numeric' 
+    });
   };
 
   return (
@@ -60,7 +66,7 @@ export default function Events() {
       {/* --- GRID INFRASTRUCTURE --- */}
       <div className="fixed inset-0 z-0 w-full h-full bg-[linear-gradient(to_right,#FFD70008_1px,transparent_1px),linear-gradient(to_bottom,#FFD70008_1px,transparent_1px)] bg-[size:4.5rem_4.5rem] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
 
-      <div className="relative z-10 px-6 py-32 max-w-7xl mx-auto mt-12">
+      <div className="relative z-10 px-6 pt-32 pb-24 max-w-7xl mx-auto mt-12">
         
         {/* OPERATIONAL HEADER */}
         <div className="text-center mb-24">
@@ -71,7 +77,7 @@ export default function Events() {
             Upcoming <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#FFD700] to-yellow-500 drop-shadow-[0_0_20px_rgba(255,215,0,0.2)]">Events</span>
           </h1>
           <p className="mt-4 text-slate-500 max-w-3xl mx-auto font-medium text-lg md:text-xl leading-relaxed">
-            Synchronizing with the society board to provide specialized technical 
+            Synchronizing with the board to provide specialized technical 
             symposiums, elite hackathons, and high-intensity workshops.
           </p>
         </div>
@@ -79,27 +85,27 @@ export default function Events() {
         {/* ACTIVE MISSIONS GRID */}
         <div className="grid gap-12 sm:grid-cols-2 lg:grid-cols-2 mb-40">
           {loading ? (
-            <> <Skeleton /> <Skeleton /> </>
+            Array(2).fill(0).map((_, i) => <Skeleton key={i} variant="card" />)
           ) : upcomingEvents.length > 0 ? (
             <AnimatePresence>
-              {upcomingEvents.map((event, index) => (
+              {upcomingEvents.map((event) => (
                 <motion.div
-                  key={event._id || index}
+                  key={event._id}
                   layout
                   initial={{ opacity: 0, y: 40 }} 
                   animate={{ opacity: 1, y: 0 }} 
-                  whileHover={{ borderColor: 'rgba(255, 215, 0, 0.4)', scale: 1.01 }}
-                  className="h-full border border-slate-800/50 rounded-[3rem] transition-all duration-500 bg-slate-950/40 backdrop-blur-xl group overflow-hidden shadow-2xl"
+                  className="h-full"
                 >
                   <EventCard
                     id={event._id}
                     title={event.title}
-                    date={formatDate(event.date)}
+                    date={event.date}
                     description={event.description}
                     photo={event.image || event.photo}
                     isPast={false}
                     registrationCount={event.registrationCount || 0}
                     maxParticipants={event.maxParticipants || 0}
+                    registrationOpen={event.registrationOpen}
                   />
                 </motion.div>
               ))}
@@ -111,7 +117,7 @@ export default function Events() {
           )}
         </div>
 
-        {/* --- FREQUENCY DIVIDER --- */}
+        {/* --- ARCHIVES DIVIDER --- */}
         <div className="my-40 relative flex items-center justify-center">
           <div className="absolute w-full h-px bg-gradient-to-r from-transparent via-slate-800 to-transparent opacity-50"></div>
           <div className="relative px-12 bg-[#020617] border border-slate-800 rounded-full py-4 shadow-3xl z-10">
@@ -122,7 +128,7 @@ export default function Events() {
           </div>
         </div>
 
-        {/* HISTORICAL REGISTRY GRID */}
+        {/* HISTORICAL GRID */}
         <div className="text-center mb-20">
           <h2 className="text-5xl md:text-7xl font-black text-white uppercase tracking-tighter leading-none mb-6 italic">Society <span className="text-slate-800">History</span></h2>
         </div>
@@ -134,17 +140,17 @@ export default function Events() {
             viewport={{ once: true }}
         >
           {loading ? (
-             Array(3).fill(0).map((_, i) => <Skeleton key={i} />)
+             Array(3).fill(0).map((_, i) => <Skeleton key={i} variant="card" />)
           ) : pastEvents.length > 0 ? (
-            pastEvents.map((event, index) => (
+            pastEvents.map((event) => (
               <motion.div
-                key={event._id || index}
-                whileHover={{ y: -12, borderColor: 'rgba(59, 130, 246, 0.4)' }}
-                className="border border-slate-800/50 rounded-[2.5rem] transition-all duration-500 bg-slate-950/40 backdrop-blur-md overflow-hidden opacity-80 hover:opacity-100 grayscale hover:grayscale-0"
+                key={event._id}
+                className="h-full"
               >
                 <EventCard
+                  id={event._id}
                   title={event.title}
-                  date={formatDate(event.date)}
+                  date={event.date}
                   description={event.description}
                   photo={event.image || event.photo}
                   isPast={true}
@@ -152,7 +158,7 @@ export default function Events() {
               </motion.div>
             ))
           ) : (
-            <div className="col-span-full text-center py-20 opacity-30 uppercase text-[10px] font-black tracking-[0.5em] italic text-slate-700">The historical registry is currently unavailable.</div>
+            <div className="col-span-full text-center py-20 opacity-30 uppercase text-[10px] font-black tracking-[0.5em] italic text-slate-700">Historical registry empty.</div>
           )}
         </motion.div>
       </div>

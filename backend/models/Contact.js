@@ -2,8 +2,7 @@ const mongoose = require("mongoose");
 
 /**
  * @description External Communication (Inquiry) Schema
- * Hardened for high-volume intake and multi-admin handling.
- * Captures external signals and tracks the internal resolution protocol.
+ * Handles the intake of public messages and tracks internal resolution status.
  */
 const contactSchema = new mongoose.Schema({
   // SENDER IDENTITY
@@ -36,7 +35,6 @@ const contactSchema = new mongoose.Schema({
     type: Boolean, 
     default: false 
   },
-  // Soft-delete to keep inquiry history but remove from active view
   isArchived: { 
     type: Boolean, 
     default: false 
@@ -47,12 +45,17 @@ const contactSchema = new mongoose.Schema({
     default: 'normal' 
   },
 
-  // RESOLUTION TRACKING
-  // Stores the ObjectId of the admin/member node who addressed the inquiry
+  // RESOLUTION TRACKING (Polymorphic Refined)
+  // Allows the dashboard to populate the name of the Admin OR Member who handled it
   handledBy: { 
-    type: mongoose.Schema.Types.ObjectId 
+    type: mongoose.Schema.Types.ObjectId,
+    refPath: 'handlerModel' 
   },
-  // Optional: Stores the summary of the response sent to the user
+  handlerModel: {
+    type: String,
+    enum: ['Admin', 'Membership'],
+    default: 'Admin'
+  },
   responsePayload: {
     type: String,
     trim: true
@@ -61,21 +64,24 @@ const contactSchema = new mongoose.Schema({
     type: Date
   }
 }, { 
-  timestamps: true // Captures createdAt (Intake Time) and updatedAt
+  timestamps: true 
 });
 
 /**
  * @section Performance & Logic Indexing
- * Optimized for the Inquiry Inbox and Admin Dashboard metrics.
  */
-
-// Sorting by most recent inquiries
 contactSchema.index({ createdAt: -1 });
-
-// Dashboard Metrics: Counting unread/non-archived messages
 contactSchema.index({ isRead: 1, isArchived: 1 });
-
-// Search optimization for names and subjects
 contactSchema.index({ name: 'text', subject: 'text' });
+
+// AUTO-STATUS PROTOCOL: 
+// Automatically sets handledAt when handledBy is assigned
+contactSchema.pre('save', function(next) {
+    if (this.isModified('handledBy') && this.handledBy) {
+        this.handledAt = Date.now();
+        this.isRead = true; // If handled, it must be read.
+    }
+    next();
+});
 
 module.exports = mongoose.model("Contact", contactSchema);

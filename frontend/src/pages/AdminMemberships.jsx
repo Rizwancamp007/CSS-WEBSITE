@@ -2,33 +2,26 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { useAuth } from "../context/AuthContext"; // FIXED: Integrated Auth State
-import { API_URL } from "../App"; 
+import { useAuth } from "../context/AuthContext";
+// FIXED: Use centralized API functions
+import { fetchAllMemberships, syncPermissions, deleteMembership as deleteApi } from "../api"; 
 
 /**
  * @description Authority Manager (Personnel Control)
  * Restricted to Level 0 (Master Admin) clearance.
- * Features Permission Matrix toggling and secure activation link generation.
+ * Manages the Permission Matrix and Identity Authorization.
  */
 export default function AdminMemberships() {
   const [memberships, setMemberships] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { user } = useAuth(); // FIXED: Reading identity from context
+  const { user } = useAuth();
   const navigate = useNavigate();
-  const token = localStorage.getItem("token"); // Standardized token key
 
-  /**
-   * @section Registry Synchronization
-   * Fetches all applicants and board members from the administrative ledger.
-   */
-  const fetchMemberships = async () => {
+  const loadMemberships = async () => {
     try {
-      const response = await fetch(`${API_URL}/memberships/admin/all`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const result = await response.json();
-      
-      const list = result.data || (Array.isArray(result) ? result : []);
+      const res = await fetchAllMemberships();
+      // Synchronized with backend { success: true, data: [...] } structure
+      const list = res.data?.data || [];
       setMemberships(list);
     } catch (error) {
       toast.error("Telemetry Sync Failure: Ledger Unreachable.");
@@ -38,57 +31,46 @@ export default function AdminMemberships() {
   };
 
   useEffect(() => {
-    // SECURITY GUARD: Redirect non-master operators
-    if (user && user.email !== "css@gmail.com") {
+    // SECURITY GUARD: Direct environment-sync for Master Admin
+    const MASTER_EMAIL = import.meta.env.VITE_MASTER_ADMIN_EMAIL || "css@gmail.com";
+    if (user && user.email?.toLowerCase() !== MASTER_EMAIL.toLowerCase()) {
       toast.error("ACCESS DENIED: Clearance Level 0 Required.");
       navigate("/admin-dashboard");
       return;
     }
-    
-    if (!token) navigate("/admin");
-    else fetchMemberships();
-  }, [token, user, navigate]);
+    loadMemberships();
+  }, [user, navigate]);
 
   /**
    * @section Authority Sync Protocol
-   * Updates RBAC permissions and approval status in the mainframe.
    */
-  const updateMemberStatus = async (id, isApproved, updatedPermissions) => {
+  const handleUpdateStatus = async (id, isApproved, updatedPermissions) => {
     const loadToast = toast.loading("Syncing Authority Parameters...");
     try {
-      const response = await fetch(`${API_URL}/admin/permissions/${id}`, {
-        method: "PATCH",
-        headers: { 
-          "Authorization": `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ 
-          approved: isApproved, 
-          role: "Executive Board", 
-          permissions: { ...updatedPermissions, isAdmin: true } 
-        })
+      // BACKEND HANDSHAKE: PATCH /api/memberships/permissions/:id
+      const res = await syncPermissions(id, { 
+        approved: isApproved, 
+        role: "Executive Board", 
+        permissions: { ...updatedPermissions, isAdmin: true } 
       });
 
-      const result = await response.json();
-
-      if (response.ok) {
+      if (res.data?.success) {
         setMemberships(prev => prev.map((m) =>
-          m._id === id ? { ...m, approved: isApproved, permissions: result.data?.permissions || updatedPermissions } : m
+          m._id === id ? { ...m, approved: isApproved, permissions: res.data.data?.permissions || updatedPermissions } : m
         ));
 
-        // Copy activation uplink to clipboard for easy distribution
-        if (result.activationLink) {
-          const fullLink = `${window.location.origin}${result.activationLink}`;
+        // SECURITY: Link generation for onboarding
+        if (res.data.activationLink) {
+          const fullLink = `${window.location.origin}${res.data.activationLink}`;
           navigator.clipboard.writeText(fullLink);
           toast.success("Identity Authorized. Activation Link Copied!", { id: loadToast });
         } else {
           toast.success("Authority Matrix Synced.", { id: loadToast });
         }
-      } else {
-        throw new Error(result.message || "Mainframe rejected parameters.");
       }
     } catch (error) {
-      toast.error("Sync Failure: " + error.message, { id: loadToast });
+      const msg = error.response?.data?.message || "Mainframe refused parameters.";
+      toast.error("Sync Failure: " + msg, { id: loadToast });
     }
   };
 
@@ -99,35 +81,29 @@ export default function AdminMemberships() {
       [field]: !currentPerms[field],
       isAdmin: true 
     };
-    updateMemberStatus(member._id, member.approved, newPermissions);
+    handleUpdateStatus(member._id, member.approved, newPermissions);
   };
 
-  const deleteMembership = async (id) => {
+  const handleDeleteRecord = async (id) => {
     if(!window.confirm("CRITICAL: Permanent wipe requested. Purge this record?")) return;
     try {
-      const response = await fetch(`${API_URL}/memberships/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.ok) {
-        toast.success("Record Purged from Registry.");
-        setMemberships(prev => prev.filter((m) => m._id !== id));
-      }
+      await deleteApi(id);
+      toast.success("Record Purged from Registry.");
+      setMemberships(prev => prev.filter((m) => m._id !== id));
     } catch (error) {
       toast.error("Purge Protocol Failed.");
     }
   };
 
   const permissionMeta = [
-    { key: 'canManageEvents', label: 'Missions', desc: 'Ops' },
-    { key: 'canManageAnnouncements', label: 'Broadcasts', desc: 'Intel' },
-    { key: 'canViewRegistrations', label: 'Registry', desc: 'Data' }
+    { key: 'canManageEvents', label: 'Missions' },
+    { key: 'canManageAnnouncements', label: 'Broadcasts' },
+    { key: 'canViewRegistrations', label: 'Registry' }
   ];
 
   return (
     <div className="min-h-screen bg-[#020617] text-white overflow-x-hidden relative font-sans selection:bg-yellow-500/30">
       
-      {/* Background Polish */}
       <div className="fixed inset-0 z-0 bg-[linear-gradient(to_right,#FFD70008_1px,transparent_1px),linear-gradient(to_bottom,#FFD70008_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
       
       <div className="relative z-10 px-6 pt-32 pb-24 max-w-7xl mx-auto mt-12">
@@ -150,7 +126,6 @@ export default function AdminMemberships() {
             <div className="p-24 text-center text-[10px] font-black uppercase tracking-widest text-slate-800 animate-pulse">Synchronizing Personnel Records...</div>
         ) : (
           <div className="space-y-6">
-            {/* Legend Header */}
             <div className="hidden lg:grid grid-cols-12 gap-6 px-10 py-4 text-[10px] font-black text-slate-700 uppercase tracking-[0.3em]">
               <div className="col-span-4">Candidate Identification</div>
               <div className="col-span-6 text-center">Permission Matrix // Access Levels</div>
@@ -165,7 +140,6 @@ export default function AdminMemberships() {
               >
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
                   
-                  {/* IDENTITY SECTION */}
                   <div className="lg:col-span-4 flex items-center gap-6">
                     <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center font-black border-2 transition-all duration-500 ${m.approved ? 'bg-blue-600/10 border-blue-500/40 text-blue-400' : 'bg-slate-950 border-slate-800 text-slate-700'}`}>
                       {m.fullName?.charAt(0)}
@@ -179,7 +153,6 @@ export default function AdminMemberships() {
                     </div>
                   </div>
 
-                  {/* PERMISSION MATRIX GRID */}
                   <div className="lg:col-span-6">
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                         {permissionMeta.map((perm) => (
@@ -191,25 +164,21 @@ export default function AdminMemberships() {
                                m.permissions?.[perm.key] 
                                ? 'bg-blue-600/10 border-blue-500/50 shadow-lg' 
                                : 'bg-slate-950 border-slate-800/50 opacity-20 hover:opacity-100'
-                             } ${!m.approved ? 'cursor-not-allowed' : ''}`}
+                             } ${!m.approved ? 'cursor-not-allowed opacity-10' : ''}`}
                            >
                              <span className={`text-[9px] font-black uppercase tracking-tighter ${m.permissions?.[perm.key] ? 'text-blue-400' : 'text-slate-600'}`}>
                                {perm.label}
-                             </span>
-                             <span className="text-[7px] font-black uppercase tracking-widest opacity-30">
-                               {m.permissions?.[perm.key] ? 'AUTHORIZED' : 'LOCKED'}
                              </span>
                            </button>
                         ))}
                     </div>
                   </div>
 
-                  {/* OPERATION CONSOLE */}
                   <div className="lg:col-span-2 flex justify-end items-center gap-4">
                     {!m.approved ? (
                       <button 
-                        onClick={() => updateMemberStatus(m._id, true, m.permissions)}
-                        className="w-full py-4 rounded-2xl bg-gradient-to-r from-[#FFD700] to-yellow-600 text-black text-[10px] font-black uppercase tracking-widest hover:brightness-110 active:scale-95 shadow-xl"
+                        onClick={() => handleUpdateStatus(m._id, true, m.permissions)}
+                        className="w-full py-4 rounded-2xl bg-gradient-to-r from-[#FFD700] to-yellow-600 text-black text-[10px] font-black uppercase tracking-widest shadow-xl"
                       >
                         Approve
                       </button>
@@ -220,7 +189,7 @@ export default function AdminMemberships() {
                          </span>
                       </div>
                     )}
-                    <button onClick={() => deleteMembership(m._id)} className="p-4 rounded-2xl bg-red-500/5 text-red-500 border border-red-500/10 hover:bg-red-600 hover:text-white transition-all shadow-lg" title="Purge Record">
+                    <button onClick={() => handleDeleteRecord(m._id)} className="p-4 rounded-2xl bg-red-500/5 text-red-500 border border-red-500/10 hover:bg-red-600 hover:text-white transition-all">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                   </div>

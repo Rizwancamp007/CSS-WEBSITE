@@ -2,8 +2,7 @@ const mongoose = require("mongoose");
 
 /**
  * @description Society Personnel Schema (The Command Structure)
- * Manages the public display and internal hierarchy of the Executive Board.
- * Optimized for ranked retrieval and social uplink management.
+ * Manages the leadership hierarchy with ranked retrieval and social links.
  */
 const teamSchema = new mongoose.Schema({
   // IDENTITY DATA
@@ -19,7 +18,7 @@ const teamSchema = new mongoose.Schema({
   }, 
   image: { 
     type: String, 
-    default: "/assets/images/placeholder-user.jpg" 
+    default: "https://placehold.co/400x400/020617/FFD700?text=CSS+LEADER" 
   },
   description: { 
     type: String, 
@@ -28,7 +27,6 @@ const teamSchema = new mongoose.Schema({
   },
 
   // ORGANIZATIONAL CLASSIFICATION
-  // Defines the departmental node for the team member
   category: { 
     type: String, 
     enum: ['Executive', 'Management', 'Technical', 'Media', 'Advisory'], 
@@ -36,7 +34,7 @@ const teamSchema = new mongoose.Schema({
   },
 
   // RANKING PROTOCOL
-  // Determines display order (1 = Highest Rank/President, 99 = General Member)
+  // 1 = President, 2 = VP, etc.
   hierarchy: { 
     type: Number, 
     default: 10,
@@ -44,7 +42,7 @@ const teamSchema = new mongoose.Schema({
     index: true 
   },
 
-  // DIGITAL UPLINKS (Socials)
+  // DIGITAL UPLINKS
   socials: {
     instagram: { type: String, trim: true },
     linkedin: { type: String, trim: true },
@@ -53,28 +51,31 @@ const teamSchema = new mongoose.Schema({
   },
 
   // LIFECYCLE & AUDIT
-  // Soft-delete: Allows deactivating a node without wiping its mission history
   isActive: { 
     type: Boolean, 
     default: true 
   },
 
-  // Polymorphic reference to the node creator (Admin or authorized Board Member)
+  // AUTHOR IDENTITY (Polymorphic Refined)
   createdBy: { 
     type: mongoose.Schema.Types.ObjectId,
-    required: true
+    required: true,
+    refPath: 'creatorModel'
+  },
+  creatorModel: {
+    type: String,
+    required: true,
+    enum: ['Admin', 'Membership'],
+    default: 'Admin'
   }
 }, { 
-  timestamps: true // Tracks appointment (createdAt) and last credential update
+  timestamps: true 
 });
 
 /**
  * @section Intelligence Indexing
- * Ensures the personnel list renders instantly during high-traffic sessions.
  */
-// Primary sorting for the Team Page
 teamSchema.index({ hierarchy: 1, name: 1 });
-// Filtering by active status and category
 teamSchema.index({ isActive: 1, category: 1 });
 
 module.exports = mongoose.model("Team", teamSchema);

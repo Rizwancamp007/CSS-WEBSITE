@@ -1,30 +1,31 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext"; 
 import toast from "react-hot-toast";
-import { API_URL } from "../utils/config"; 
 
 /**
  * @description The Administrative Gateway
- * Hardened for secure identity verification.
- * Features brute-force prevention UI and automated session initialization.
+ * Hardened for secure identity verification with brute-force prevention UI.
  */
 export default function AdminLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { login } = useAuth(); 
+  const { login, user } = useAuth(); 
   const navigate = useNavigate();
+
+  // SESSION GUARD: Auto-redirect if node is already active
+  useEffect(() => {
+    if (user) navigate("/admin-dashboard");
+  }, [user, navigate]);
 
   /**
    * @section Authentication Sequence
-   * Performs the secure handshake with the CSS Mainframe.
    */
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Transmission Validation: Prevent empty packets
     if (!email || !password) return toast.error("Credentials required for uplink.");
 
     setIsSubmitting(true);
@@ -33,8 +34,7 @@ export default function AdminLogin() {
     try {
       /**
        * HANDSHAKE:
-       * Calling the login function from AuthContext which handles 
-       * localStorage persistence and state updates.
+       * AuthContext handles JWT persistence and role-based state.
        */
       const result = await login(email.toLowerCase().trim(), password);
 
@@ -42,7 +42,6 @@ export default function AdminLogin() {
         toast.success("Identity Verified. Node Active.", { id: authToast });
         navigate("/admin-dashboard"); 
       } else {
-        // Displays backend-specific errors (e.g., "Account Locked", "Invalid Key")
         toast.error(result.message || "Unauthorized Access.", { id: authToast });
       }
     } catch (error) {
@@ -53,12 +52,12 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] text-white overflow-y-auto relative flex items-center justify-center font-sans selection:bg-yellow-500/30">
+    <div className="min-h-screen bg-[#020617] text-white overflow-hidden relative flex items-center justify-center font-sans selection:bg-yellow-500/30">
       
       {/* --- GRID INFRASTRUCTURE --- */}
-      <div className="fixed inset-0 z-0 w-full h-full bg-[linear-gradient(to_right,#FFD70008_1px,transparent_1px),linear-gradient(to_bottom,#FFD70008_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
+      <div className="fixed inset-0 z-0 w-full h-full bg-[linear-gradient(to_right,#FFD70008_1px,transparent_1px),linear-gradient(to_bottom,#FFD70008_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none opacity-50" />
 
-      <div className="relative z-10 w-full max-w-lg px-6 pt-10 pb-32 flex flex-col items-center">
+      <div className="relative z-10 w-full max-w-lg px-6 flex flex-col items-center">
         
         {/* BRAND IDENTITY NODE */}
         <motion.div
@@ -93,7 +92,7 @@ export default function AdminLogin() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@gcu.edu.pk"
-                className="w-full px-6 py-4 rounded-2xl bg-slate-950/80 border border-slate-800 text-sm font-bold text-white placeholder:text-slate-900 focus:outline-none focus:border-blue-500/50 transition-all shadow-inner"
+                className="w-full px-6 py-4 rounded-2xl bg-slate-950/80 border border-slate-800 text-sm font-bold text-white placeholder:text-slate-900 focus:outline-none focus:border-blue-500/50 transition-all"
                 required
               />
             </div>
@@ -105,7 +104,7 @@ export default function AdminLogin() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••••••"
-                className="w-full px-6 py-4 rounded-2xl bg-slate-950/80 border border-slate-800 text-sm font-bold text-white placeholder:text-slate-900 focus:outline-none focus:border-[#FFD700]/40 transition-all shadow-inner"
+                className="w-full px-6 py-4 rounded-2xl bg-slate-950/80 border border-slate-800 text-sm font-bold text-white placeholder:text-slate-900 focus:outline-none focus:border-[#FFD700]/40 transition-all"
                 required
               />
             </div>
@@ -113,7 +112,7 @@ export default function AdminLogin() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className={`w-full relative py-5 mt-4 rounded-2xl bg-gradient-to-r from-[#FFD700] via-[#FDB931] to-[#FFA500] text-black font-black text-[11px] uppercase tracking-[0.3em] shadow-xl hover:shadow-[#FFD700]/10 hover:brightness-110 active:scale-[0.97] transition-all disabled:opacity-50`}
+              className={`w-full relative py-5 mt-4 rounded-2xl bg-gradient-to-r from-[#FFD700] via-[#FDB931] to-[#FFA500] text-black font-black text-[11px] uppercase tracking-[0.3em] shadow-xl hover:shadow-[#FFD700]/10 active:scale-[0.97] transition-all disabled:opacity-50`}
             >
               {isSubmitting ? "TRANSMITTING..." : "ESTABLISH CONNECTION"}
             </button>
