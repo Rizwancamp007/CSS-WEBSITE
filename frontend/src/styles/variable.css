@@ -1,0 +1,68 @@
+/* MAINFRAME CONFIGURATION REGISTRY
+  Version: 2.0 (Ironclad Hardened)
+  Description: Centralized design tokens for CSS GCU.
+*/
+
+:root {
+  /* --- COLOR ARSENAL (Institutional Palette) --- */
+  --primary-gold: #FFD700;
+  --primary-gold-dim: rgba(255, 215, 0, 0.1);
+  --accent-blue: #2563eb;
+  --accent-blue-glow: rgba(37, 99, 235, 0.4);
+  
+  /* System Neutrals */
+  --mainframe-deep: #020617;
+  --mainframe-surface: rgba(15, 23, 42, 0.4);
+  --text-primary: #ffffff;
+  --text-secondary: #94a3b8; /* Slate-400 */
+  --text-muted: #475569;      /* Slate-600 */
+
+  /* Semantic Status */
+  --status-success: #10b981;
+  --status-error: #ef4444;
+  --status-warning: #f59e0b;
+  --status-info: #3b82f6;
+
+  /* --- GLASSMORPHISM TERMINAL --- */
+  --glass-bg: rgba(15, 23, 42, 0.6);
+  --glass-border: rgba(255, 215, 0, 0.1);
+  --glass-border-active: rgba(255, 215, 0, 0.3);
+  --glass-blur: 16px;
+
+  /* --- LAYOUT GEOMETRY --- */
+  --navbar-height: 80px;
+  --sidebar-width: 280px;
+  --container-max-width: 1280px;
+
+  /* --- TYPOGRAPHY ENGINE --- */
+  --font-sans: 'Poppins', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  
+  /* Hierarchy Scales */
+  --radius-xs: 8px;
+  --radius-sm: 12px;
+  --radius-md: 20px;
+  --radius-lg: 2.5rem;   /* Standardized Ironclad Corner */
+  --radius-full: 9999px;
+
+  /* --- SHADOW DYNAMICS (Depth Perception) --- */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+  --shadow-gold: 0 0 30px rgba(255, 215, 0, 0.05);
+  --shadow-blue: 0 0 30px rgba(37, 99, 235, 0.1);
+
+  /* --- SPACING GRID (4px Base) --- */
+  --space-xs: 0.25rem; /* 4px */
+  --space-sm: 0.5rem;  /* 8px */
+  --space-md: 1rem;    /* 16px */
+  --space-lg: 2rem;    /* 32px */
+  --space-xl: 4rem;    /* 64px */
+  --space-xxl: 8rem;   /* 128px */
+
+  /* --- KINETICS (Transition Physics) --- */
+  --transition-instant: 100ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-fast: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-medium: 500ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 800ms cubic-bezier(0.4, 0, 0.2, 1);
+}

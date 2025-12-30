@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * @description Root Styling Infrastructure
+ * Hardened for Tailwind V3/V4 integration.
+ * Enforces the high-intensity tech aesthetic across the DOM.
+ */
+
+@layer base {
+  body {
+    /* Mainframe background and text selection colors synchronized with society branding */
+    @apply bg-[#020617] text-white antialiased selection:bg-blue-600/30 selection:text-[#FFD700];
+    font-family: 'Poppins', sans-serif;
+    overflow-x: hidden;
+  }
+
+  /* --- INSTITUTIONAL SCROLLBAR --- */
+  /* Precision width for a professional terminal feel */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #020617;
+  }
+ 
+  ::-webkit-scrollbar-thumb {
+    /* Hardened Gradient: Blue (Communication) to Gold (Authority) */
+    background: linear-gradient(180deg, #2563eb, #FFD700);
+    border-radius: 100vh;
+    border: 1px solid #020617;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    /* Glow effect on hover to simulate active energy */
+    background: linear-gradient(180deg, #3b82f6, #fbbf24);
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.2);
+  }
+}
+
+@layer components {
+  /**
+   * @section High-Clearance Glassmorphism
+   * Optimized for Admin Dashboard cards and data containers.
+   */
+  .glass-card {
+    @apply bg-slate-900/40 backdrop-blur-2xl border border-slate-800 rounded-[2.5rem] transition-all duration-500 hover:border-[#FFD700]/20 shadow-2xl;
+  }
+  
+  /**
+   * @section Industrial Admin Headers
+   * Bold, italicized typography with an institutional gradient.
+   */
+  .admin-header {
+    @apply text-4xl font-black uppercase tracking-tighter italic bg-clip-text text-transparent bg-gradient-to-r from-blue-500 via-[#FFD700] to-yellow-600;
+  }
+
+  /**
+   * @section Command Terminal Inputs
+   * Large, tactile input fields designed for rapid administrative entry.
+   */
+  .mainframe-input {
+    @apply w-full bg-slate-950/80 border border-slate-800 p-5 rounded-2xl text-xs font-bold text-white focus:border-blue-500/50 outline-none transition-all placeholder:text-slate-900;
+  }
+}
