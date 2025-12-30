@@ -3,9 +3,8 @@ import axios from "axios";
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 /**
- * @section PUBLIC_API (The Entry Node)
- * Used for Login and Account Activation where no JWT exists yet.
- * Security is handled by the Activation Token or Credentials.
+ * @section PUBLIC_API
+ * Used for Login and Account Activation (No JWT required).
  */
 const PUBLIC_API = axios.create({
   baseURL: BASE_URL,
@@ -13,8 +12,8 @@ const PUBLIC_API = axios.create({
 });
 
 /**
- * @section API (The Administrative Uplink)
- * Used for all protected routes. Includes Interceptors for JWT binding.
+ * @section API
+ * Used for protected routes. Includes JWT binding.
  */
 const API = axios.create({
   baseURL: BASE_URL,
@@ -30,15 +29,24 @@ API.interceptors.request.use((config) => {
   return config;
 }, (error) => Promise.reject(error));
 
+// 
+
 // Response Interceptor: Handles expired sessions (401/403)
 API.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+    const status = error.response ? error.response.status : null;
+    const currentPath = window.location.pathname;
+
+    // SECURITY BYPASS: Do not redirect if we are in a "Safe Zone" (Activation or Login)
+    const isSafeZone = currentPath === "/setup-board-password" || currentPath === "/admin";
+
+    if ((status === 401 || status === 403) && !isSafeZone) {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
-      // Only redirect if we are inside the admin panel, not on the public site
-      if (window.location.pathname.startsWith('/admin') && window.location.pathname !== '/admin') {
+      
+      // Redirect to login only if we were trying to access a protected admin route
+      if (currentPath.startsWith('/admin') || currentPath === "/all-registrations") {
         window.location.href = "/admin"; 
       }
     }
@@ -49,7 +57,6 @@ API.interceptors.response.use(
 // ==========================================
 // 1. ADMINISTRATIVE & AUTH
 // ==========================================
-// FIXED: Uses PUBLIC_API to prevent interceptor loops
 export const adminLogin = (formData) => PUBLIC_API.post("/admin/login", formData);
 export const getAdminProfile = () => API.get("/admin/profile");
 export const updatePassword = (passwords) => API.put("/admin/change-password", passwords);
@@ -79,7 +86,7 @@ export const deleteAnnouncement = (id) => API.delete(`/announcements/${id}`);
 // 4. PERSONNEL & AUTHORITY (MEMBERSHIPS)
 // ==========================================
 export const submitMembership = (data) => PUBLIC_API.post("/memberships", data);
-// FIXED: Uses PUBLIC_API so the Activation Token is the primary security key
+// ACTIVATION HANDSHAKE: Uses PUBLIC_API to avoid session-wipe loops
 export const setupBoardPassword = (data) => PUBLIC_API.post("/memberships/activate-board", data);
 export const fetchAllMemberships = () => API.get("/memberships/admin/all");
 export const syncPermissions = (id, data) => API.patch(`/memberships/permissions/${id}`, data); 
