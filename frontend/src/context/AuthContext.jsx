@@ -5,7 +5,7 @@ const AuthContext = createContext();
 
 /**
  * @description The Identity Hub (AuthContext)
- * Manages the global security state, session persistence, and RBAC clearance.
+ * Hardened for dual-collection verification and resilient session persistence.
  */
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -22,13 +22,12 @@ export const AuthProvider = ({ children }) => {
 
   /**
    * @section Session Restoration
-   * Verifies the local JWT against the backend authority on boot.
+   * FIXED: Added precise error handling to prevent "Panic Logouts" during server lag.
    */
   useEffect(() => {
     const verifySession = async () => {
       const token = localStorage.getItem("token");
       
-      // LIVE FIX: Handling malformed or 'null' string tokens
       if (!token || token === "null" || token === "undefined") {
         setLoading(false);
         return;
@@ -36,15 +35,19 @@ export const AuthProvider = ({ children }) => {
 
       try {
         const res = await getAdminProfile();
-        // Defensive check: Access res.data.data per hardened backend structure
-        if (res.data && res.data.success) {
+        // SYNCED: Accessing res.data.data to match backend return structure
+        if (res.data && res.data.success && res.data.data) {
           setUser(res.data.data);
         } else {
           logout();
         }
       } catch (err) {
-        console.error("AUTH_VERIFY_FAILURE: Uplink severed.");
-        logout();
+        // Only logout if the error is 401/403 (Token Invalid)
+        // Prevents logging out on 500 errors or network drops
+        if (err.response && (err.response.status === 401 || err.response.status === 403)) {
+          console.error("AUTH_VERIFY_FAILURE: Session invalid.");
+          logout();
+        }
       } finally {
         setLoading(false);
       }
@@ -65,37 +68,36 @@ export const AuthProvider = ({ children }) => {
 
       if (res.data && res.data.success) {
         localStorage.setItem("token", res.data.token);
-        setUser(res.data.user);
+        // SYNCED: Backend login returns user at root of data
+        setUser(res.data.user); 
         return { success: true };
       }
-      return { success: false, message: "Handshake refused by authority." };
+      return { success: false, message: res.data.message || "Handshake refused." };
     } catch (error) {
       return { 
         success: false, 
-        message: error.response?.data?.message || "Uplink Failed: Server Unreachable." 
+        message: error.response?.data?.message || "Uplink Failed." 
       };
     }
   };
 
   /**
    * @helper Permission Guard (The Warden)
-   * Hardened to sync with VITE_MASTER_ADMIN_EMAIL.
    */
   const hasPermission = useCallback((permissionKey) => {
     if (!user) return false;
 
-    // LEVEL 0 BYPASS
+    // LEVEL 0 BYPASS (Master Admin)
     const MASTER = (import.meta.env.VITE_MASTER_ADMIN_EMAIL || "css@gmail.com").toLowerCase().trim();
     const currentEmail = (user.email || user.gmail || "").toLowerCase().trim();
     
     if (currentEmail === MASTER) return true; 
 
-    // Granular RBAC Check: Ensure permissions object exists
+    // Granular RBAC Check
     const permissions = user.permissions || {};
     return permissions[permissionKey] === true;
   }, [user]);
 
-  // Performance Optimization: Memoize the context value
   const authValue = useMemo(() => ({
     user,
     login,

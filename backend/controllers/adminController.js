@@ -14,7 +14,6 @@ const logAdminAction = async (adminId, action, details, req) => {
         const user = await Admin.findById(adminId) || await Membership.findById(adminId);
         const email = user ? (user.email || user.gmail) : "UNKNOWN_OPERATOR";
 
-        // LIVE FIX: Improved IP detection for Render/Cloud environments
         const ip = req.headers['x-forwarded-for']?.split(',')[0] || 
                    req.connection.remoteAddress || 
                    req.socket.remoteAddress;
@@ -42,7 +41,7 @@ const generateToken = (id) => {
 };
 
 // ==========================================
-// 1. AUTHENTICATION & LOGIN (REFINED)
+// 1. AUTHENTICATION & LOGIN
 // ==========================================
 
 exports.adminLogin = async (req, res) => {
@@ -50,12 +49,10 @@ exports.adminLogin = async (req, res) => {
     const { password } = req.body;
 
     try {
-        // Search Hierarchy: Check Primary Admins first
         let user = await Admin.findOne({ email }).select("+password");
         let isMembershipAccount = false;
 
         if (!user) {
-            // Fallback: Search Society Board Members
             user = await Membership.findOne({ gmail: email }).select("+password");
             isMembershipAccount = true;
         }
@@ -63,28 +60,22 @@ exports.adminLogin = async (req, res) => {
         if (!user) {
             return res.status(401).json({ 
                 success: false, 
-                message: "Security Alert: Identity unrecognized on this frequency." 
+                message: "Security Alert: Identity unrecognized." 
             });
         }
 
         if (user.lockUntil && user.lockUntil > Date.now()) {
             return res.status(423).json({ 
                 success: false, 
-                message: "Uplink Locked: Excessive failures. Retry shortly." 
+                message: "Uplink Locked. Retry shortly." 
             });
         }
 
         if (isMembershipAccount) {
-            if (!user.approved) {
+            if (!user.approved || !user.isActivated) {
                 return res.status(403).json({ 
                     success: false, 
-                    message: "Access Denied: Membership node not yet approved." 
-                });
-            }
-            if (!user.isActivated) {
-                return res.status(403).json({ 
-                    success: false, 
-                    message: "Access Denied: Account node not activated." 
+                    message: "Access Denied: Node not approved or activated." 
                 });
             }
         }
@@ -97,12 +88,13 @@ exports.adminLogin = async (req, res) => {
             if (isMembershipAccount && !user.permissions?.isAdmin) {
                 return res.status(403).json({ 
                     success: false, 
-                    message: "Clearance Level Zero Required: Admin privileges not detected." 
+                    message: "Clearance Level Zero Required." 
                 });
             }
 
-            await logAdminAction(user._id, "LOGIN", "Mainframe uplink established successfully.", req);
+            await logAdminAction(user._id, "LOGIN", "Mainframe uplink established.", req);
 
+            // SYNCED: Returns user object inside root for AuthContext compatibility
             res.json({
                 success: true,
                 user: {
@@ -119,13 +111,9 @@ exports.adminLogin = async (req, res) => {
                 user.lockUntil = Date.now() + 30 * 60 * 1000; 
             }
             await user.save();
-            res.status(401).json({ 
-                success: false, 
-                message: "Authentication Failed: Invalid Access Key." 
-            });
+            res.status(401).json({ success: false, message: "Invalid Access Key." });
         }
     } catch (error) {
-        console.error("LOGIN_ERROR:", error);
         res.status(500).json({ success: false, message: "Internal Systems Error." });
     }
 };
@@ -134,13 +122,19 @@ exports.adminLogin = async (req, res) => {
 // 2. SECURITY & PROFILE MANAGEMENT
 // ==========================================
 
+/**
+ * @desc Get Current Profile
+ * FIXED: Returns 'data' wrapper to match Frontend verifySession logic
+ */
 exports.getAdminProfile = async (req, res) => {
     try {
-        const user = await Admin.findById(req.user.id).select("-password") || 
-                     await Membership.findById(req.user.id).select("-password");
+        // req.user is already populated by 'protect' middleware
+        if (!req.user) return res.status(404).json({ success: false, message: "Node unreachable." });
         
-        if (!user) return res.status(404).json({ success: false, message: "Node unreachable." });
-        res.json({ success: true, data: user });
+        res.json({ 
+            success: true, 
+            data: req.user 
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: "Data retrieval failed." });
     }
@@ -152,7 +146,7 @@ exports.changePassword = async (req, res) => {
         const user = await Admin.findById(req.user.id).select("+password") || 
                      await Membership.findById(req.user.id).select("+password");
 
-        if (!user) return res.status(404).json({ success: false, message: "Node identification lost." });
+        if (!user) return res.status(404).json({ success: false, message: "Node lost." });
 
         const isMatch = await user.matchPassword(oldPassword);
         if (!isMatch) return res.status(401).json({ success: false, message: "Current key invalid." });
@@ -188,12 +182,11 @@ exports.updateMemberPermissions = async (req, res) => {
         member.role = role;
 
         await member.save();
-        await logAdminAction(req.user.id, "AUTHORITY_SYNC", `Permissions synced for node: ${member.gmail}`, req);
+        await logAdminAction(req.user.id, "AUTHORITY_SYNC", `Permissions synced: ${member.gmail}`, req);
 
         res.json({ 
             success: true, 
             message: "Clearance level synchronized.", 
-            // FIXED: Standardized link for Vercel consumption
             activationLink: clearToken ? `/setup-board-password?token=${clearToken}` : null 
         });
     } catch (error) {
@@ -236,7 +229,7 @@ exports.getMessages = async (req, res) => {
 exports.markMessageRead = async (req, res) => {
     try {
         await Contact.findByIdAndUpdate(req.params.id, { isRead: true });
-        await logAdminAction(req.user.id, "INQUIRY_PROTOCOL", `Marked inquiry ${req.params.id} read.`, req);
+        await logAdminAction(req.user.id, "INQUIRY_PROTOCOL", `Marked message read.`, req);
         res.json({ success: true, message: "Status updated." });
     } catch (error) {
         res.status(500).json({ success: false, message: "Update failure." });
@@ -255,11 +248,12 @@ exports.setupAdminPassword = async (req, res) => {
             isActivated: false 
         });
 
-        if (!member) return res.status(404).json({ success: false, message: "Activation token invalid." });
+        if (!member) return res.status(404).json({ success: false, message: "Activation invalid." });
 
         member.password = password; 
         member.isActivated = true;
         member.activationToken = undefined;
+        member.activationExpire = undefined;
         await member.save();
 
         res.json({ success: true, message: "Node Activation Complete." });
