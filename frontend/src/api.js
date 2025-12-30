@@ -12,7 +12,6 @@ const API = axios.create({
 
 /**
  * @section Request Interceptor (Auth Key Binder)
- * Automatically binds JWT to every administrative request.
  */
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
@@ -20,26 +19,19 @@ API.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token.trim()}`;
   }
   return config;
-}, (error) => {
-  return Promise.reject(error);
-});
+}, (error) => Promise.reject(error));
 
 /**
  * @section Response Interceptor (Security Sentry)
- * Globally monitors for session expiration or unauthorized access.
  */
 API.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Catch 401 (Expired) or 403 (Forbidden)
     if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-      // Clear credentials to prevent state corruption
       localStorage.removeItem("token");
       localStorage.removeItem("user");
-      
-      // Redirect to login frequency if currently in admin territory
-      if (window.location.pathname.startsWith('/admin')) {
-        window.location.href = "/admin/login"; 
+      if (window.location.pathname.startsWith('/admin') && window.location.pathname !== '/admin') {
+        window.location.href = "/admin"; 
       }
     }
     return Promise.reject(error);
@@ -69,6 +61,7 @@ export const deleteEvent = (id) => API.delete(`/events/${id}`);
 export const fetchAnnouncements = () => API.get("/announcements");
 export const fetchAdminAnnouncements = () => API.get("/announcements/admin/all");
 export const createAnnouncement = (data) => API.post("/announcements", data);
+export const updateAnnouncement = (id, data) => API.put(`/announcements/${id}`, data);
 export const toggleArchiveAnnouncement = (id) => API.patch(`/announcements/archive/${id}`);
 export const deleteAnnouncement = (id) => API.delete(`/announcements/${id}`);
 
@@ -76,10 +69,8 @@ export const deleteAnnouncement = (id) => API.delete(`/announcements/${id}`);
 // 4. PERSONNEL & AUTHORITY (MEMBERSHIPS)
 // ==========================================
 export const submitMembership = (data) => API.post("/memberships", data);
-// SYNCED: Matches hardened backend activation path
 export const setupBoardPassword = (data) => API.post("/memberships/activate-board", data);
 export const fetchAllMemberships = () => API.get("/memberships/admin/all");
-// SYNCED: Uses the membership routes permissions endpoint
 export const syncPermissions = (id, data) => API.patch(`/memberships/permissions/${id}`, data); 
 export const deleteMembership = (id) => API.delete(`/memberships/${id}`);
 
@@ -106,5 +97,6 @@ export const toggleTeamStatus = (id) => API.patch(`/team/status/${id}`);
 export const submitInquiry = (data) => API.post("/admin/messages/public", data);
 export const fetchInquiries = () => API.get("/admin/messages");
 export const markInquiryRead = (id) => API.patch(`/admin/messages/${id}`);
+export const deleteMessage = (id) => API.delete(`/admin/messages/${id}`);
 
 export default API;
