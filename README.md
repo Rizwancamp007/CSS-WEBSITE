@@ -3,6 +3,8 @@
 A high-security, full-stack ecosystem designed for the Computer Science Society of GCU Lahore.
 This platform manages public engagement, event registrations, and society governance through a hardened administrative mainframe.
 
+Live Deployed Link: https://css-website-puce.vercel.app/
+
 🛡️ The "Ironclad" Architecture
 The platform is built on a MERN stack (MongoDB, Express, React, Node.js) with a focus on "Institutional Tech" aesthetics and security.
 
@@ -33,46 +35,6 @@ Security Handshake: JWT-based authentication with brute-force shielding and sess
 Forensic Auditing: Every admin action is logged with IP and user-agent data for integrity checks.
 
 Node Activation: Secure one-time token system for board member account setup.
-
-
-🚀 Local Deployment Sequence
-To run this platform locally on your system, follow these steps:
-
-1. Prerequisites
-Node.js (v18+)
-
-MongoDB Community Server (running on port 27017)
-
-2. Environment Setup
-Create a .env file in the backend folder:
-PORT=3001
-MONGO_URI=mongodb://localhost:27017/techtakra
-JWT_SECRET=your_secret_key
-MASTER_ADMIN_EMAIL=css@gmail.com
-TOKEN_EXPIRE=3h
-
-Create a .env file in the frontend folder:
-VITE_API_URL=http://localhost:3001/api
-VITE_MASTER_ADMIN_EMAIL=css@gmail.com
-
-
-3. Installation
-Backend Initiation:
-cd backend
-npm install
-npm run dev
-
-Frontend Uplink:
-cd frontend
-npm install
-npm run dev
-
-🛠️ API Infrastructure
-Endpoint                  Method    Access    Description
-/api/admin/login          POST      Public    Authenticate operator credentials
-./api/events              GET       Public     Fetch all active mission telemetry
-./api/admin/logs          GET       Level 0    Retrieve forensic activity ledger
-./api/admin/permissions   PATCH     Level 0    Sync clearance levels for board members.
 
 🎨 Design Standards
 The UI follows a strict "Institutional Tech" aesthetic:
