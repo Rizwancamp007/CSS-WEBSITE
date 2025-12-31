@@ -4,6 +4,7 @@ const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 /**
  * @section PUBLIC_API
+ * Used for Login and Account Activation (No JWT required).
  */
 const PUBLIC_API = axios.create({
   baseURL: BASE_URL,
@@ -11,29 +12,25 @@ const PUBLIC_API = axios.create({
 });
 
 /**
- * @section API (Protected)
+ * @section API
+ * Used for protected routes. Includes JWT binding.
  */
 const API = axios.create({
   baseURL: BASE_URL,
   headers: { "Content-Type": "application/json" },
 });
 
-// 1. HARDENED REQUEST INTERCEPTOR
+// Request Interceptor: Binds JWT to the header
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
-  
-  /**
-   * FIXED: Strict sanitation. 
-   * We only attach the header if the token is a real string.
-   * If token is "null" (string), we don't send it to prevent 401 loops.
-   */
-  if (token && token !== "null" && token !== "undefined" && token.length > 20) {
+  // Clean 'null' strings and ensure valid token node
+  if (token && token !== "null" && token !== "undefined") {
     config.headers.Authorization = `Bearer ${token.trim()}`;
   }
   return config;
 }, (error) => Promise.reject(error));
 
-// 2. HARDENED RESPONSE INTERCEPTOR (Logout Loop Killer)
+// Response Interceptor: Handles session integrity
 API.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -41,37 +38,36 @@ API.interceptors.response.use(
     const currentPath = window.location.pathname;
 
     /**
-     * @section SAFETY_VALVE
-     * We ONLY trigger a session wipe if:
-     * 1. Status is 401/403.
-     * 2. We are NOT in a Safe Zone (Login/Register/Activation).
-     * 3. A token actually exists in storage (Prevents logout on already-logged-out state).
+     * @section SECURITY BYPASS (Safe Zones)
+     * Do not trigger a session wipe if the user is on critical landing 
+     * or activation pages. This prevents the "2-second logout loop."
      */
     const isSafeZone = currentPath === "/admin" || 
                        currentPath === "/setup-board-password" || 
                        currentPath.startsWith("/register");
-    
-    const hasToken = !!localStorage.getItem("token");
 
-    if ((status === 401 || status === 403) && !isSafeZone && hasToken) {
-      console.warn("AUTH_SHIELD: Unauthorized uplink detected. Purging session nodes.");
+    // Only purge session on definitive Auth failures (401/403)
+    if ((status === 401 || status === 403) && !isSafeZone) {
+      console.warn("AUTH_INTERCEPTOR: Session invalid. Decommissioning local nodes.");
       
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       
       /**
        * @section ROUTE SHIELD
-       * Only force redirect if the user is deep inside the admin sector.
+       * Only redirect to login if the operator is currently within 
+       * a restricted administrative sector.
        */
       const isProtectedRoute = currentPath.startsWith('/admin') || 
                                currentPath === "/all-registrations" || 
                                currentPath === "/admin-dashboard";
 
       if (isProtectedRoute) {
-        window.location.href = "/admin?session=expired"; 
+        window.location.href = "/admin"; 
       }
     }
     
+    // Pass non-auth errors (500s/Network) back to the component for local handling
     return Promise.reject(error);
   }
 );
@@ -108,6 +104,7 @@ export const deleteAnnouncement = (id) => API.delete(`/announcements/${id}`);
 // 4. PERSONNEL & AUTHORITY (MEMBERSHIPS)
 // ==========================================
 export const submitMembership = (data) => PUBLIC_API.post("/memberships", data);
+// SYNCED: Endpoint corrected to match adminRoutes.js
 export const setupBoardPassword = (data) => PUBLIC_API.post("/admin/setup-password", data);
 export const fetchAllMemberships = () => API.get("/memberships/admin/all");
 export const syncPermissions = (id, data) => API.patch(`/admin/permissions/${id}`, data); 
