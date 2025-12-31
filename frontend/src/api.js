@@ -20,17 +20,21 @@ const API = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-// Request Interceptor: Binds JWT to the header
+// 1. HARDENED REQUEST INTERCEPTOR
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
-  // Clean 'null' strings and ensure valid token node
-  if (token && token !== "null" && token !== "undefined") {
+  
+  /**
+   * FIXED: Strict sanitation. 
+   * Ensures 'null' or 'undefined' string nodes don't reach the server.
+   */
+  if (token && token !== "null" && token !== "undefined" && token.length > 20) {
     config.headers.Authorization = `Bearer ${token.trim()}`;
   }
   return config;
 }, (error) => Promise.reject(error));
 
-// Response Interceptor: Handles session integrity
+// 2. HARDENED RESPONSE INTERCEPTOR (Logout Loop Killer)
 API.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -39,35 +43,40 @@ API.interceptors.response.use(
 
     /**
      * @section SECURITY BYPASS (Safe Zones)
-     * Do not trigger a session wipe if the user is on critical landing 
-     * or activation pages. This prevents the "2-second logout loop."
+     * Paths where session wipes are strictly prohibited during uplink.
      */
     const isSafeZone = currentPath === "/admin" || 
                        currentPath === "/setup-board-password" || 
                        currentPath.startsWith("/register");
 
-    // Only purge session on definitive Auth failures (401/403)
-    if ((status === 401 || status === 403) && !isSafeZone) {
-      console.warn("AUTH_INTERCEPTOR: Session invalid. Decommissioning local nodes.");
+    const hasToken = !!localStorage.getItem("token");
+
+    /**
+     * @section AUTH_SHIELD
+     * FIXED: We only purge session on 401 (Expired/Invalid Token).
+     * 403 (Forbidden) is ignored to prevent Board Members from being logged out 
+     * when background charts attempt to load Level 0 metrics.
+     */
+    if (status === 401 && !isSafeZone && hasToken) {
+      console.warn("AUTH_INTERCEPTOR: Session expired. Decommissioning local nodes.");
       
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       
       /**
        * @section ROUTE SHIELD
-       * Only redirect to login if the operator is currently within 
-       * a restricted administrative sector.
+       * Only redirect if the operator is within a restricted sector.
        */
       const isProtectedRoute = currentPath.startsWith('/admin') || 
                                currentPath === "/all-registrations" || 
                                currentPath === "/admin-dashboard";
 
       if (isProtectedRoute) {
-        window.location.href = "/admin"; 
+        window.location.href = "/admin?session=expired";
       }
     }
     
-    // Pass non-auth errors (500s/Network) back to the component for local handling
+    // Pass errors (including 403s) back to components for local handling
     return Promise.reject(error);
   }
 );
@@ -104,10 +113,9 @@ export const deleteAnnouncement = (id) => API.delete(`/announcements/${id}`);
 // 4. PERSONNEL & AUTHORITY (MEMBERSHIPS)
 // ==========================================
 export const submitMembership = (data) => PUBLIC_API.post("/memberships", data);
-// SYNCED: Endpoint corrected to match adminRoutes.js
 export const setupBoardPassword = (data) => PUBLIC_API.post("/admin/setup-password", data);
 export const fetchAllMemberships = () => API.get("/memberships/admin/all");
-export const syncPermissions = (id, data) => API.patch(`/admin/permissions/${id}`, data); 
+export const syncPermissions = (id, data) => API.patch(`/admin/permissions/${id}`, data);
 export const deleteMembership = (id) => API.delete(`/memberships/${id}`);
 
 // ==========================================
