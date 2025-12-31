@@ -77,7 +77,7 @@ exports.createRegistration = async (req, res) => {
       department,
       semester,
       eventId,
-      eventName: targetEvent.title
+      eventName: targetEvent.title // Redundancy for CSV exports
     });
 
     // Update Global Counter (Atomic Sync)
@@ -94,9 +94,17 @@ exports.createRegistration = async (req, res) => {
 // 2. ADMINISTRATIVE LEDGER (Registry)
 // ==========================================
 
+/**
+ * @desc Get all registrations
+ * FIXED: Added .populate() to resolve the "Unknown Mission" bug in the frontend dashboard.
+ */
 exports.getAllRegistrations = async (req, res) => {
   try {
-    const registrations = await Registration.find().sort({ createdAt: -1 });
+    // CRITICAL FIX: Populates the eventId to send the Mission Title to the frontend
+    const registrations = await Registration.find()
+        .populate("eventId", "title date location") 
+        .sort({ createdAt: -1 });
+
     res.json({ success: true, data: registrations });
   } catch (err) {
     res.status(500).json({ success: false, message: "Ledger synchronization failed." });

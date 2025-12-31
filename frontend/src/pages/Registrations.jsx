@@ -3,12 +3,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
-// FIXED: Use centralized API functions
 import { fetchAllRegistrations, deleteRegistration as deleteApi, exportRegistrations } from "../api"; 
 
 /**
  * @description Mission Registry (Registrations Terminal)
  * Hardened for high-density participant tracking and professional data extraction.
+ * FIXED: Data resolution logic to eliminate "Unknown Mission" bugs.
  */
 export default function Registrations() {
   const [registrations, setRegistrations] = useState([]);
@@ -18,9 +18,6 @@ export default function Registrations() {
   const { hasPermission } = useAuth();
   const navigate = useNavigate();
 
-  /**
-   * @section Registry Synchronization
-   */
   const loadRegistrations = async () => {
     try {
       setLoading(true);
@@ -53,10 +50,6 @@ export default function Registrations() {
     } catch (e) { toast.error("Purge failed.", { id: purgeToast }); }
   };
 
-  /**
-   * @section Extraction Protocol
-   * Uses the hardened backend stream to generate a clean CSV manifest.
-   */
   const handleExport = async () => {
     const exportToast = toast.loading("Extracting Manifest...");
     try {
@@ -78,14 +71,25 @@ export default function Registrations() {
     setTimeout(() => window.print(), 500);
   };
 
-  const eventList = ["All", ...new Set(registrations.map(reg => reg.eventId?.title || "Unknown Mission"))];
+  /**
+   * @section LOGIC_HARDENING
+   * Resolves the mission title from either the populated object or the flat string.
+   */
+  const getMissionTitle = (reg) => reg.eventId?.title || reg.eventName || "Unknown Mission";
+
+  const eventList = ["All", ...new Set(registrations.map(reg => getMissionTitle(reg)))];
 
   const filteredData = registrations.filter(reg => {
     const participantName = (reg.name || "").toLowerCase();
     const roll = (reg.rollNo || "").toLowerCase();
-    const missionName = (reg.eventId?.title || "").toLowerCase();
-    const matchesSearch = participantName.includes(searchTerm.toLowerCase()) || roll.includes(searchTerm.toLowerCase());
-    const matchesEvent = filterEvent === "All" || (reg.eventId?.title === filterEvent);
+    const missionName = getMissionTitle(reg).toLowerCase();
+    
+    const matchesSearch = participantName.includes(searchTerm.toLowerCase()) || 
+                          roll.includes(searchTerm.toLowerCase()) ||
+                          missionName.includes(searchTerm.toLowerCase());
+
+    const matchesEvent = filterEvent === "All" || (getMissionTitle(reg) === filterEvent);
+    
     return matchesSearch && matchesEvent;
   });
 
@@ -184,7 +188,7 @@ export default function Registrations() {
                       </td>
                       <td className="p-8">
                         <span className="px-4 py-2 rounded-xl bg-slate-950 border border-slate-800 text-[#FFD700] text-[9px] font-black uppercase tracking-widest shadow-lg italic">
-                          {reg.eventId?.title || "Unknown Mission"}
+                          {getMissionTitle(reg)}
                         </span>
                       </td>
                       <td className="p-8">
@@ -192,10 +196,10 @@ export default function Registrations() {
                         <div className="text-[9px] text-slate-700 font-mono mt-1 italic">{reg.phoneNumber}</div>
                       </td>
                       <td className="p-8 text-right no-print">
-                         <div className="flex justify-end gap-6 uppercase font-black text-[9px] tracking-widest">
-                           <a href={`mailto:${reg.email}`} className="text-blue-500 hover:text-white transition-all">Ping</a>
-                           <button onClick={() => handleDelete(reg._id)} className="text-red-600 hover:text-white transition-all">Purge</button>
-                         </div>
+                          <div className="flex justify-end gap-6 uppercase font-black text-[9px] tracking-widest">
+                            <a href={`mailto:${reg.email}`} className="text-blue-500 hover:text-white transition-all">Ping</a>
+                            <button onClick={() => handleDelete(reg._id)} className="text-red-600 hover:text-white transition-all">Purge</button>
+                          </div>
                       </td>
                     </motion.tr>
                   )) : (

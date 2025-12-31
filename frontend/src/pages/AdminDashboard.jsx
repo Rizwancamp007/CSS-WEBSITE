@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
 import { useAuth } from "../context/AuthContext";
 import { 
   fetchAdminEvents, 
@@ -19,8 +19,8 @@ export default function AdminDashboard() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  const MASTER_EMAIL = import.meta.env.VITE_MASTER_ADMIN_EMAIL || "css@gmail.com";
-  const isMaster = user?.email?.toLowerCase() === MASTER_EMAIL.toLowerCase();
+  const MASTER_EMAIL = (import.meta.env.VITE_MASTER_ADMIN_EMAIL || "css@gmail.com").toLowerCase();
+  const isMaster = user?.email?.toLowerCase() === MASTER_EMAIL;
 
   useEffect(() => {
     const fetchTelemetry = async () => {
@@ -52,11 +52,23 @@ export default function AdminDashboard() {
     fetchTelemetry();
   }, [isMaster]);
 
+  /**
+   * @section CHART_REFINEMENT
+   * Optimized to show only 4 core metrics filtered by user permissions.
+   */
+  const chartData = [
+    { name: 'Missions', count: stats.events, fill: '#3b82f6', perm: 'canManageEvents' },
+    { name: 'Enrollments', count: stats.events, fill: '#FFD700', perm: 'canViewRegistrations' }, // Using event-based enrollment context
+    { name: 'Inbox', count: stats.messages, fill: '#10b981', isMasterOnly: true },
+    { name: 'Members', count: stats.memberships, fill: '#a855f7', isMasterOnly: true },
+  ].filter(item => item.isMasterOnly ? isMaster : hasPermission(item.perm));
+
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-[#020617] border border-slate-800 p-3 rounded-xl shadow-2xl">
-          <p className="text-[10px] font-black uppercase text-[#FFD700]">{`${payload[0].name}: ${payload[0].value}`}</p>
+          <p className="text-[10px] font-black uppercase text-white">{`${payload[0].payload.name}`}</p>
+          <p className="text-[14px] font-black text-[#FFD700]">{`${payload[0].value}`}</p>
         </div>
       );
     }
@@ -73,11 +85,10 @@ export default function AdminDashboard() {
         <div className="flex flex-col md:flex-row items-center justify-between mb-12 gap-6">
           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
             <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none italic">Command <span className="text-[#FFD700]">Center</span></h1>
-            <p className="text-slate-600 mt-3 text-[10px] font-black uppercase tracking-[0.4em]">Operator: {user?.name || "UNIDENTIFIED"} // Access: {isMaster ? "LEVEL_0" : "BOARD_MEMBER"}</p>
+            <p className="text-slate-600 mt-3 text-[10px] font-black uppercase tracking-[0.4em]">Operator: {user?.fullName || user?.name || "UNIDENTIFIED"} // Access: {isMaster ? "LEVEL_0" : "BOARD_MEMBER"}</p>
           </motion.div>
           
           <div className="flex items-center gap-3">
-            {/* RESTORED: PUBLIC SITE BRIDGE */}
             <a href="/" target="_blank" className="px-6 py-2.5 rounded-xl bg-blue-600/10 border border-blue-500/30 text-blue-400 text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all">
               Live Terminal
             </a>
@@ -126,29 +137,32 @@ export default function AdminDashboard() {
                 ))}
             </div>
 
+            {/* REFINED BAR CHART SECTION */}
             <div className="lg:col-span-1 bg-slate-950/60 backdrop-blur-3xl border border-slate-800 rounded-[2.5rem] p-8 h-full flex flex-col">
-              <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em] mb-8">Node Distribution</h3>
+              <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em] mb-8 italic">Node Distribution (Refined)</h3>
               <div className="flex-grow w-full" style={{ minHeight: '300px' }}>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={[
-                    { name: 'Events', count: stats.events, fill: '#3b82f6' }, 
-                    { name: 'News', count: stats.announcements, fill: '#f59e0b' },
-                    { name: 'Staff', count: stats.team, fill: '#FFD700' },
-                    ...(isMaster ? [
-                        { name: 'Inbox', count: stats.messages, fill: '#10b981' },
-                        { name: 'Members', count: stats.memberships, fill: '#a855f7' },
-                        { name: 'Logs', count: stats.logs, fill: '#ef4444' }
-                    ] : [])
-                  ]}>
+                  <BarChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                    <XAxis dataKey="name" hide />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Bar dataKey="count" radius={[10, 10, 0, 0]} barSize={40} />
+                    <XAxis 
+                        dataKey="name" 
+                        stroke="#475569" 
+                        fontSize={8} 
+                        tickLine={false} 
+                        axisLine={false} 
+                        interval={0}
+                    />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                    <Bar dataKey="count" radius={[6, 6, 0, 0]} barSize={30}>
+                        {chartData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))}
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
               <div className="mt-4 pt-4 border-t border-slate-800 text-center">
-                  <p className="text-[9px] text-slate-700 font-black uppercase tracking-[0.2em] italic">System Status: NOMINAL</p>
+                  <p className="text-[9px] text-slate-700 font-black uppercase tracking-[0.2em] italic">Telemetry: ACTIVE</p>
               </div>
             </div>
           </div>

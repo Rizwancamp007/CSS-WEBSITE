@@ -13,9 +13,13 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
     const savedUser = localStorage.getItem("user");
     try {
-      return savedUser ? JSON.parse(savedUser) : null;
+      // Hardened: Ensures corrupted localStorage doesn't crash the boot sequence
+      return (savedUser && savedUser !== "undefined" && savedUser !== "null") 
+        ? JSON.parse(savedUser) 
+        : null;
     } catch (err) {
-      console.error("AUTH_INIT_ERROR: Corrupt session data.");
+      console.error("AUTH_INIT_ERROR: Corrupt session data node purged.");
+      localStorage.removeItem("user");
       return null;
     }
   });
@@ -48,15 +52,15 @@ export const AuthProvider = ({ children }) => {
       try {
         const res = await getAdminProfile();
         
-        // SYNCED: Accessing res.data.data to match normalized backend structure
+        // SYNCED: Matches the 'res.data.data' structure from adminController.js
         if (res.data && res.data.success && res.data.data) {
           const freshUser = res.data.data;
           setUser(freshUser);
           
-          // Update local storage with fresh data (synced permissions/names)
+          // Update local storage with fresh telemetry (synced permissions/names)
           localStorage.setItem("user", JSON.stringify(freshUser));
         } else {
-          // If response is successful but data is missing/invalid, clear session
+          // If response success is false or data missing, decommissioning session
           logout();
         }
       } catch (err) {
@@ -69,8 +73,8 @@ export const AuthProvider = ({ children }) => {
           console.warn("SERVER_LAG: Retaining local session state until uplink recovers.");
         }
       } finally {
-        // Small delay ensures state is fully painted before hiding loader
-        setTimeout(() => setLoading(false), 100);
+        // Settling time ensures state is fully painted before hiding loader
+        setTimeout(() => setLoading(false), 150);
       }
     };
 
@@ -88,6 +92,7 @@ export const AuthProvider = ({ children }) => {
       });
 
       if (res.data && res.data.success) {
+        // NOTE: login response returns user at root to match loginApi original spec
         const { token, user: userData } = res.data;
         
         // PERSISTENCE: Save both Token and User object for refresh stability
@@ -119,17 +124,17 @@ export const AuthProvider = ({ children }) => {
     // LEVEL 0 BYPASS (Master Admin)
     const MASTER = (import.meta.env.VITE_MASTER_ADMIN_EMAIL || "css@gmail.com").toLowerCase().trim();
     
-    // NORMALIZATION BRIDGE: Checks both possible email fields
+    // NORMALIZATION BRIDGE: Consolidates identity field variants
     const currentEmail = (user.email || user.gmail || "").toLowerCase().trim();
     
     if (currentEmail === MASTER) return true; 
 
-    // Granular RBAC Check: Ensure permissions object exists before check
+    // Granular RBAC Check: Validates specific clearance keys
     const permissions = user.permissions || {};
     return permissions[permissionKey] === true;
   }, [user]);
 
-  // Performance Optimization: Memoize the context value
+  // Performance Optimization: Memoize the context value to prevent unnecessary re-renders
   const authValue = useMemo(() => ({
     user,
     login,

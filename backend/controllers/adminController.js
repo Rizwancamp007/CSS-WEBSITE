@@ -61,7 +61,7 @@ exports.adminLogin = async (req, res) => {
         if (!user) {
             return res.status(401).json({ 
                 success: false, 
-                message: "Security Alert: Identity unrecognized on this frequency." 
+                message: "Security Alert: Identity unrecognized." 
             });
         }
 
@@ -95,13 +95,13 @@ exports.adminLogin = async (req, res) => {
 
             await logAdminAction(user._id, "LOGIN", "Mainframe uplink established successfully.", req);
 
-            // RESPONSE: Normalized user object for Frontend consistency
+            // Response for Login (Direct user object)
             res.json({
                 success: true,
                 user: {
                     id: user._id,
                     fullName: user.fullName || "Master Admin",
-                    email: user.email || user.gmail,
+                    email: user.email || user.gmail, // Normalize email/gmail bridge
                     permissions: user.permissions || { isAdmin: true }
                 },
                 token: generateToken(user._id),
@@ -129,13 +129,14 @@ exports.adminLogin = async (req, res) => {
 
 /**
  * @desc Get Current Profile
- * FIXED: Returns normalized data to prevent "gmail vs email" logout loops.
+ * SYNCED: Bridges the structural gap to prevent logout loops.
+ * FIXED: Wraps user data in the 'data' key to match AuthContext.jsx refresh logic.
  */
 exports.getAdminProfile = async (req, res) => {
     try {
         if (!req.user) return res.status(404).json({ success: false, message: "Node unreachable." });
         
-        // NORMALIZATION: Ensuring keys match the Login response exactly
+        // NORMALIZATION: Ensures key names match exactly what Login provides
         const normalizedUser = {
             id: req.user._id,
             fullName: req.user.fullName || "Master Admin",
@@ -143,6 +144,7 @@ exports.getAdminProfile = async (req, res) => {
             permissions: req.user.permissions || { isAdmin: true }
         };
 
+        // FIXED: Response wrapped in 'data' key as expected by AuthContext res.data.data
         res.json({ 
             success: true, 
             data: normalizedUser 
@@ -241,7 +243,7 @@ exports.getMessages = async (req, res) => {
 exports.markMessageRead = async (req, res) => {
     try {
         await Contact.findByIdAndUpdate(req.params.id, { isRead: true });
-        await logAdminAction(req.user.id, "INQUIRY_PROTOCOL", `Marked inquiry read.`, req);
+        await logAdminAction(req.user.id, "INQUIRY_PROTOCOL", `Marked inquiry ${req.params.id} read.`, req);
         res.json({ success: true, message: "Status updated." });
     } catch (error) {
         res.status(500).json({ success: false, message: "Update failure." });

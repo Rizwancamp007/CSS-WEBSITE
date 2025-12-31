@@ -23,16 +23,14 @@ const API = axios.create({
 // Request Interceptor: Binds JWT to the header
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
-  // Clean 'null' strings sometimes left by failed sessions
+  // Clean 'null' strings and ensure valid token node
   if (token && token !== "null" && token !== "undefined") {
     config.headers.Authorization = `Bearer ${token.trim()}`;
   }
   return config;
 }, (error) => Promise.reject(error));
 
-// 
-
-// Response Interceptor: Handles expired sessions (401/403)
+// Response Interceptor: Handles session integrity
 API.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -40,21 +38,25 @@ API.interceptors.response.use(
     const currentPath = window.location.pathname;
 
     /**
-     * @section SECURITY BYPASS
-     * Do not trigger a session wipe if the user is currently on the 
-     * Login or Activation pages. This prevents the "2-second logout loop."
+     * @section SECURITY BYPASS (Safe Zones)
+     * Do not trigger a session wipe if the user is on critical landing 
+     * or activation pages. This prevents the "2-second logout loop."
      */
-    const isSafeZone = currentPath === "/setup-board-password" || currentPath === "/admin";
+    const isSafeZone = currentPath === "/admin" || 
+                       currentPath === "/setup-board-password" || 
+                       currentPath.startsWith("/register");
 
+    // Only purge session on definitive Auth failures (401/403)
     if ((status === 401 || status === 403) && !isSafeZone) {
-      console.warn("AUTH_INTERCEPTOR: Session invalid. Purging local nodes.");
+      console.warn("AUTH_INTERCEPTOR: Session invalid. Decommissioning local nodes.");
       
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       
       /**
        * @section ROUTE SHIELD
-       * Only redirect to login if we are trying to access a protected sector.
+       * Only redirect to login if the operator is currently within 
+       * a restricted administrative sector.
        */
       const isProtectedRoute = currentPath.startsWith('/admin') || 
                                currentPath === "/all-registrations" || 
@@ -64,6 +66,8 @@ API.interceptors.response.use(
         window.location.href = "/admin"; 
       }
     }
+    
+    // Pass non-auth errors (500s/Network) back to the component for local handling
     return Promise.reject(error);
   }
 );
@@ -100,6 +104,7 @@ export const deleteAnnouncement = (id) => API.delete(`/announcements/${id}`);
 // 4. PERSONNEL & AUTHORITY (MEMBERSHIPS)
 // ==========================================
 export const submitMembership = (data) => PUBLIC_API.post("/memberships", data);
+// SYNCED: Endpoint corrected to match adminRoutes.js
 export const setupBoardPassword = (data) => PUBLIC_API.post("/admin/setup-password", data);
 export const fetchAllMemberships = () => API.get("/memberships/admin/all");
 export const syncPermissions = (id, data) => API.patch(`/admin/permissions/${id}`, data); 

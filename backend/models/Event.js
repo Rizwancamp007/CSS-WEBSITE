@@ -57,7 +57,7 @@ const eventSchema = new mongoose.Schema({
   },
 
   // LIFECYCLE MANAGEMENT
-  // Restored: Crucial for Admin Archiving vs Public Visibility
+  // Archiving removes the node from the public main grid but preserves the entry link.
   isArchived: { 
     type: Boolean, 
     default: false 
@@ -91,7 +91,7 @@ eventSchema.virtual('isFull').get(function() {
 
 /**
  * @section Automation Middleware
- * Hardened for lifecycle synchronization.
+ * Hardened for lifecycle synchronization without blocking archived registrations.
  */
 eventSchema.pre('save', function(next) {
   const now = new Date();
@@ -101,15 +101,12 @@ eventSchema.pre('save', function(next) {
     this.status = 'completed';
   }
 
-  // 2. Force close registration if capacity is reached
+  // 2. Capacity Guard: Force close registration only if maxParticipants limit is strictly met
   if (this.maxParticipants > 0 && this.registrationCount >= this.maxParticipants) {
     this.registrationOpen = false;
   }
 
-  // 3. Security: If mission is archived, registration must be locked
-  if (this.isArchived) {
-    this.registrationOpen = false;
-  }
+  // FIXED: Removed auto-lock on isArchived to support link-based registration bypass.
   
   next();
 });
