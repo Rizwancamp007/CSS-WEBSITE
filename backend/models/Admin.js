@@ -21,7 +21,7 @@ const adminSchema = new mongoose.Schema({
   password: { 
     type: String, 
     required: true,
-    select: false // Prevents password leakage in general API responses
+    select: false // CRITICAL: Prevents password leakage in general API responses
   },
 
   // --- SECURITY & BRUTE-FORCE SHIELD ---
@@ -83,9 +83,10 @@ const adminSchema = new mongoose.Schema({
   timestamps: true 
 });
 
-// ==========================================
-// MIDDLEWARES
-// ==========================================
+/**
+ * @section Middlewares
+ * Automatic encryption protocol.
+ */
 adminSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   
@@ -101,27 +102,11 @@ adminSchema.pre("save", async function (next) {
   }
 });
 
-// ==========================================
-// METHODS
-// ==========================================
+/**
+ * @section Verification Methods
+ */
 adminSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
-};
-
-/**
- * @helper Increment login attempts and lock account if threshold exceeded
- */
-adminSchema.methods.incLoginAttempts = async function () {
-  const MAX_ATTEMPTS = 5;
-  const LOCK_TIME = 30 * 60 * 1000; // 30 minutes
-
-  this.loginAttempts += 1;
-
-  if (this.loginAttempts >= MAX_ATTEMPTS) {
-    this.lockUntil = Date.now() + LOCK_TIME;
-  }
-
-  await this.save();
 };
 
 module.exports = mongoose.model("Admin", adminSchema);

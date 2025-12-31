@@ -34,31 +34,31 @@ const logAction = async (adminId, action, details, req) => {
 // ==========================================
 
 exports.applyForMembership = async (req, res) => {
-    try {
-        const { fullName, rollNo, department, semester, gmail, phoneNumber, applyingRole } = req.body;
-        const normalizedRoll = rollNo?.toUpperCase().trim();
-        const normalizedGmail = gmail?.toLowerCase().trim();
+  try {
+    const { fullName, rollNo, department, semester, gmail, phoneNumber, applyingRole } = req.body;
+    const normalizedRoll = rollNo?.toUpperCase().trim();
+    const normalizedGmail = gmail?.toLowerCase().trim();
 
-        const existing = await Membership.findOne({ 
-            $or: [{ rollNo: normalizedRoll }, { gmail: normalizedGmail }] 
+    const existing = await Membership.findOne({ 
+        $or: [{ rollNo: normalizedRoll }, { gmail: normalizedGmail }] 
+    });
+    
+    if (existing) {
+        return res.status(400).json({ 
+            success: false, 
+            message: "Node Collision: Application already exists." 
         });
-        
-        if (existing) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "Node Collision: Application already exists." 
-            });
-        }
-
-        const application = await Membership.create({
-            fullName, rollNo: normalizedRoll, department, semester,
-            gmail: normalizedGmail, phoneNumber, applyingRole
-        });
-
-        res.status(201).json({ success: true, message: "Enlistment transmitted.", data: { id: application._id } });
-    } catch (err) {
-        res.status(500).json({ success: false, message: "Enlistment system failure." });
     }
+
+    const application = await Membership.create({
+      fullName, rollNo: normalizedRoll, department, semester,
+      gmail: normalizedGmail, phoneNumber, applyingRole
+    });
+
+    res.status(201).json({ success: true, message: "Enlistment transmitted.", data: { id: application._id } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Enlistment system failure." });
+  }
 };
 
 // ==========================================
@@ -66,12 +66,12 @@ exports.applyForMembership = async (req, res) => {
 // ==========================================
 
 exports.getAllMemberships = async (req, res) => {
-    try {
-        const memberships = await Membership.find().sort({ createdAt: -1 });
-        res.json({ success: true, data: memberships });
-    } catch (err) {
-        res.status(500).json({ success: false, message: "Registry retrieval failed." });
-    }
+  try {
+    const memberships = await Membership.find().sort({ createdAt: -1 });
+    res.json({ success: true, data: memberships });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Registry retrieval failed." });
+  }
 };
 
 // ==========================================
@@ -81,92 +81,92 @@ exports.getAllMemberships = async (req, res) => {
 /**
  * @desc Public: Activate Board Account via Token
  * @protocol POST /api/memberships/activate-board
- * FIXED: Hashes token to match DB, validates expiry, updates credentials.
+ * FIXED: Hashes token to match DB and updates correct fields.
  */
 exports.activateBoard = async (req, res) => {
-    try {
-        const { rollNo, gmail, password, token } = req.body;
+  try {
+    const { rollNo, gmail, password, token } = req.body;
 
-        // 1. Hash incoming token
-        const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+    // 1. Hash the incoming token to match the SHA256 stored in DB
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
-        // 2. Locate node with triple-verification & token expiry check
-        const member = await Membership.findOne({
-            rollNo: rollNo.toUpperCase().trim(),
-            gmail: gmail.toLowerCase().trim(),
-            activationToken: hashedToken,
-            activationExpire: { $gt: Date.now() },
-            isActivated: false
-        });
+    // 2. Locate node using triple-verification
+    const member = await Membership.findOne({
+      rollNo: rollNo.toUpperCase().trim(),
+      gmail: gmail.toLowerCase().trim(),
+      activationToken: hashedToken,
+      activationExpire: { $gt: Date.now() }
+    });
 
-        if (!member) {
-            return res.status(404).json({ 
-                success: false, 
-                message: "Uplink Denied: Invalid credentials or expired link." 
-            });
-        }
-
-        // 3. Update credentials & activate
-        member.password = password; 
-        member.isActivated = true;
-        member.activationToken = undefined;
-        member.activationExpire = undefined;
-
-        await member.save();
-        await logAction(member._id, "BOARD_ACTIVATION", "Account successfully activated.", req);
-
-        res.status(200).json({ success: true, message: "Identity Verified. Account Active." });
-    } catch (err) {
-        res.status(500).json({ success: false, message: "Activation logic failure." });
+    if (!member) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Uplink Denied: Invalid credentials or expired link." 
+      });
     }
+
+    // 3. Update Credentials & Set Active
+    member.password = password; 
+    member.isActivated = true;
+    member.activationToken = undefined;
+    member.activationExpire = undefined;
+
+    await member.save();
+
+    await logAction(member._id, "BOARD_ACTIVATION", "Account successfully activated.", req);
+
+    res.status(200).json({ success: true, message: "Identity Verified. Account Active." });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Activation logic failure." });
+  }
 };
 
 /**
- * @desc Admin: Toggle Membership Approval & Merge Permissions
- * FIXED: Preserves existing flags, avoids overwriting.
+ * @desc Admin: Toggle Membership Approval & Generate Token
  */
 exports.syncPermissions = async (req, res) => {
-    try {
-        const member = await Membership.findById(req.params.id);
-        if (!member) return res.status(404).json({ success: false, message: "Member not found." });
+  try {
+    const member = await Membership.findById(req.params.id);
+    if (!member) return res.status(404).json({ success: false, message: "Member not found." });
 
-        // Initial approval and token generation
-        if (req.body.approved && !member.approved) {
-            const rawToken = member.createActivationToken();
-            member.approved = true;
-            member.permissions = { ...member.permissions, isAdmin: true }; // Merge base admin access
-            await member.save();
-            
-            // Token returned for admin usage (email sending optional)
-            return res.json({ success: true, message: "Member approved. Activation token generated.", token: rawToken });
-        }
-
-        // Generic permission updates
-        if (req.body.permissions) {
-            member.permissions = { ...member.permissions, ...req.body.permissions };
-        }
-
-        await member.save();
-        res.json({ success: true, data: member });
-    } catch (err) {
-        res.status(500).json({ success: false, message: "Sync operation failed." });
+    // Handle initial approval and token generation
+    if (req.body.approved && !member.approved) {
+      const rawToken = member.createActivationToken();
+      member.approved = true;
+      member.permissions.isAdmin = true; // Grant base admin access
+      await member.save();
+      
+      // LOGIC: In a real scenario, you'd send an email here. 
+      // For now, the token is saved and visible to SuperAdmin.
+      return res.json({ success: true, message: "Member approved. Activation token generated.", token: rawToken });
     }
+
+    // Handle generic permission updates
+    if (req.body.permissions) {
+      member.permissions = { ...member.permissions, ...req.body.permissions };
+    }
+
+    await member.save();
+    res.json({ success: true, data: member });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Sync operation failed." });
+  }
 };
 
 /**
  * @desc Admin: Delete Member
  */
 exports.deleteMember = async (req, res) => {
-    try {
-        const target = await Membership.findById(req.params.id);
-        if (!target) return res.status(404).json({ success: false, message: "Node not found." });
+  try {
+    const target = await Membership.findById(req.params.id);
+    if (!target) return res.status(404).json({ success: false, message: "Node not found." });
 
-        const identity = `${target.fullName} (${target.rollNo})`;
-        await target.deleteOne();
-        await logAction(req.user.id, "MEMBERSHIP_PURGE", `Permanently removed: ${identity}`, req);
+    const identity = `${target.fullName} (${target.rollNo})`;
+    await target.deleteOne();
+    await logAction(req.user.id, "MEMBERSHIP_PURGE", `Permanently removed: ${identity}`, req);
 
-        res.json({ success: true, message: "Record purged." });
-    } catch (err) {
-        res.status(500).json({ success: false, message: "Wipe failure." });
-    }
+    res.json({ success: true, message: "Record purged." });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Wipe failure." });
+  }
 };

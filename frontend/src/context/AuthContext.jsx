@@ -4,42 +4,46 @@ import { adminLogin as loginApi, getAdminProfile } from "../api";
 const AuthContext = createContext();
 
 /**
- * AuthProvider: Central hub for Admins & Board Members
- * - Handles dual-collection verification (Admin / Membership)
- * - Maintains session persistence with tokenVersion checks
- * - Enforces RBAC & activation rules
+ * @description The Identity Hub (AuthContext)
+ * Hardened for dual-collection verification and resilient session persistence.
  */
 export const AuthProvider = ({ children }) => {
+  // PERSISTENCE FIX: Initialize user from localStorage to prevent "null" flicker on refresh
+  // This ensures ProtectedRoute sees the user immediately before the API call finishes.
   const [user, setUser] = useState(() => {
     const savedUser = localStorage.getItem("user");
     try {
+      // Hardened: Ensures corrupted localStorage doesn't crash the boot sequence
       return (savedUser && savedUser !== "undefined" && savedUser !== "null") 
         ? JSON.parse(savedUser) 
         : null;
     } catch (err) {
-      console.error("AUTH_INIT_ERROR: Corrupt session cleared.");
+      console.error("AUTH_INIT_ERROR: Corrupt session data node purged.");
       localStorage.removeItem("user");
       return null;
     }
   });
-
+  
   const [loading, setLoading] = useState(true);
 
-  // ---------------------------
-  // Terminate Session
-  // ---------------------------
+  /**
+   * @section Terminate Session
+   */
   const logout = useCallback(() => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setUser(null);
   }, []);
 
-  // ---------------------------
-  // Session Verification / Restoration
-  // ---------------------------
+  /**
+   * @section Session Restoration
+   * Verifies the local JWT against the backend authority on boot.
+   */
   useEffect(() => {
     const verifySession = async () => {
       const token = localStorage.getItem("token");
+      
+      // LIVE FIX: Handling malformed or 'null' string tokens
       if (!token || token === "null" || token === "undefined") {
         setLoading(false);
         return;
@@ -47,30 +51,29 @@ export const AuthProvider = ({ children }) => {
 
       try {
         const res = await getAdminProfile();
-
-        if (res.data?.success && res.data.data) {
+        
+        // SYNCED: Matches the 'res.data.data' structure from adminController.js
+        if (res.data && res.data.success && res.data.data) {
           const freshUser = res.data.data;
-
-          // Check activation & approved flags for Membership nodes
-          if (freshUser.role !== "Admin" && (!freshUser.approved || !freshUser.isActivated)) {
-            console.warn("AUTH_VERIFY: Board member not activated or approved.");
-            logout();
-            return;
-          }
-
-          localStorage.setItem("user", JSON.stringify(freshUser));
           setUser(freshUser);
+          
+          // Update local storage with fresh telemetry (synced permissions/names)
+          localStorage.setItem("user", JSON.stringify(freshUser));
         } else {
+          // If response success is false or data missing, decommissioning session
           logout();
         }
       } catch (err) {
-        if (err.response?.status === 401 || err.response?.status === 403) {
-          console.error("AUTH_VERIFY_FAILURE: Session invalid/expired.");
+        // RESILIENCY: Only logout if the error is 401/403 (Token Invalid/Expired)
+        // This prevents logging out on 500 errors or temporary network drops.
+        if (err.response && (err.response.status === 401 || err.response.status === 403)) {
+          console.error("AUTH_VERIFY_FAILURE: Session invalid or expired.");
           logout();
         } else {
-          console.warn("SERVER_LAG: Retaining local session until uplink recovers.");
+          console.warn("SERVER_LAG: Retaining local session state until uplink recovers.");
         }
       } finally {
+        // Settling time ensures state is fully painted before hiding loader
         setTimeout(() => setLoading(false), 150);
       }
     };
@@ -78,9 +81,9 @@ export const AuthProvider = ({ children }) => {
     verifySession();
   }, [logout]);
 
-  // ---------------------------
-  // Login
-  // ---------------------------
+  /**
+   * @section Mainframe Login
+   */
   const login = async (email, password) => {
     try {
       const res = await loginApi({ 
@@ -88,52 +91,57 @@ export const AuthProvider = ({ children }) => {
         password 
       });
 
-      if (res.data?.success) {
+      if (res.data && res.data.success) {
+        // NOTE: login response returns user at root to match loginApi original spec
         const { token, user: userData } = res.data;
-
-        // Ensure Membership node is approved & activated
-        if (userData.role !== "Admin" && (!userData.approved || !userData.isActivated)) {
-          return { success: false, message: "Account pending board approval or activation." };
-        }
-
+        
+        // PERSISTENCE: Save both Token and User object for refresh stability
         localStorage.setItem("token", token);
         localStorage.setItem("user", JSON.stringify(userData));
-        setUser(userData);
-
+        
+        setUser(userData); 
         return { success: true };
       }
-
-      return { success: false, message: res.data?.message || "Handshake refused by authority." };
+      return { 
+        success: false, 
+        message: res.data.message || "Handshake refused by authority." 
+      };
     } catch (error) {
-      return { success: false, message: error.response?.data?.message || "Uplink Failed: Server Unreachable." };
+      return { 
+        success: false, 
+        message: error.response?.data?.message || "Uplink Failed: Server Unreachable." 
+      };
     }
   };
 
-  // ---------------------------
-  // Permission Guard (RBAC)
-  // ---------------------------
+  /**
+   * @helper Permission Guard (The Warden)
+   * Hardened to handle both 'email' (Admin) and 'gmail' (Board Member) fields.
+   */
   const hasPermission = useCallback((permissionKey) => {
     if (!user) return false;
 
+    // LEVEL 0 BYPASS (Master Admin)
     const MASTER = (import.meta.env.VITE_MASTER_ADMIN_EMAIL || "css@gmail.com").toLowerCase().trim();
+    
+    // NORMALIZATION BRIDGE: Consolidates identity field variants
     const currentEmail = (user.email || user.gmail || "").toLowerCase().trim();
-
+    
     if (currentEmail === MASTER) return true; 
 
+    // Granular RBAC Check: Validates specific clearance keys
     const permissions = user.permissions || {};
     return permissions[permissionKey] === true;
   }, [user]);
 
-  // ---------------------------
-  // Memoized Context Value
-  // ---------------------------
+  // Performance Optimization: Memoize the context value to prevent unnecessary re-renders
   const authValue = useMemo(() => ({
     user,
     login,
     logout,
     hasPermission,
     loading
-  }), [user, login, logout, hasPermission, loading]);
+  }), [user, logout, hasPermission, loading]);
 
   return (
     <AuthContext.Provider value={authValue}>
@@ -144,6 +152,8 @@ export const AuthProvider = ({ children }) => {
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) throw new Error("useAuth must be used within an AuthProvider.");
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider node.");
+  }
   return context;
 };
