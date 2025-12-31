@@ -1,146 +1,179 @@
-import axios from "axios";
+import React, { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
+import { useAuth } from "../context/AuthContext";
+import { 
+  fetchAdminEvents, 
+  fetchAdminAnnouncements, 
+  fetchAdminTeam, 
+  fetchAllMemberships, 
+  fetchInquiries, 
+  getActivityLogs 
+} from "../api";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
+export default function AdminDashboard() {
+  const { user, logout, hasPermission } = useAuth();
+  const [stats, setStats] = useState({ events: 0, memberships: 0, announcements: 0, team: 0, messages: 0, logs: 0 });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
 
-/**
- * @section PUBLIC_API
- * Used for Login and Account Activation (No JWT required).
- */
-const PUBLIC_API = axios.create({
-  baseURL: BASE_URL,
-  headers: { "Content-Type": "application/json" },
-});
+  const MASTER_EMAIL = (import.meta.env.VITE_MASTER_ADMIN_EMAIL || "css@gmail.com").toLowerCase();
+  const isMaster = user?.email?.toLowerCase() === MASTER_EMAIL;
 
-/**
- * @section API
- * Used for protected routes. Includes JWT binding.
- */
-const API = axios.create({
-  baseURL: BASE_URL,
-  headers: { "Content-Type": "application/json" },
-});
+  useEffect(() => {
+    const fetchTelemetry = async () => {
+      try {
+        setLoading(true);
+        
+        // SYNCED: Individual fetching to prevent one 403 error from triggering a global session wipe
+        const eventsRes = await fetchAdminEvents().catch(() => ({ data: { data: [] } }));
+        const announceRes = await fetchAdminAnnouncements().catch(() => ({ data: { data: [] } }));
+        const teamRes = await fetchAdminTeam().catch(() => ({ data: { data: [] } }));
+        
+        let membersRes = { data: { data: [] } };
+        let messagesRes = { data: { data: [] } };
+        let logsRes = { data: { data: [] } };
 
-// 1. HARDENED REQUEST INTERCEPTOR
-API.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
-  
-  /**
-   * FIXED: Strict sanitation. 
-   * Ensures 'null' or 'undefined' string nodes don't reach the server.
-   */
-  if (token && token !== "null" && token !== "undefined" && token.length > 20) {
-    config.headers.Authorization = `Bearer ${token.trim()}`;
-  }
-  return config;
-}, (error) => Promise.reject(error));
+        if (isMaster) {
+           membersRes = await fetchAllMemberships().catch(() => ({ data: { data: [] } }));
+           messagesRes = await fetchInquiries().catch(() => ({ data: { data: [] } }));
+           logsRes = await getActivityLogs().catch(() => ({ data: { data: [] } }));
+        }
 
-// 2. HARDENED RESPONSE INTERCEPTOR (Logout Loop Killer)
-API.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    const status = error.response ? error.response.status : null;
-    const currentPath = window.location.pathname;
-
-    /**
-     * @section SECURITY BYPASS (Safe Zones)
-     * Paths where session wipes are strictly prohibited during uplink.
-     */
-    const isSafeZone = currentPath === "/admin" || 
-                       currentPath === "/setup-board-password" || 
-                       currentPath.startsWith("/register");
-
-    const hasToken = !!localStorage.getItem("token");
-
-    /**
-     * @section AUTH_SHIELD
-     * FIXED: We only purge session on 401 (Expired/Invalid Token).
-     * 403 (Forbidden) is ignored to prevent Board Members from being logged out 
-     * when background charts attempt to load Level 0 metrics.
-     */
-    if (status === 401 && !isSafeZone && hasToken) {
-      console.warn("AUTH_INTERCEPTOR: Session expired. Decommissioning local nodes.");
-      
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-      
-      /**
-       * @section ROUTE SHIELD
-       * Only redirect if the operator is within a restricted sector.
-       */
-      const isProtectedRoute = currentPath.startsWith('/admin') || 
-                               currentPath === "/all-registrations" || 
-                               currentPath === "/admin-dashboard";
-
-      if (isProtectedRoute) {
-        window.location.href = "/admin?session=expired";
+        setStats({
+          events: eventsRes.data?.data?.length || 0,
+          announcements: announceRes.data?.data?.length || 0,
+          team: teamRes.data?.data?.length || 0,
+          memberships: membersRes.data?.data?.length || 0,
+          messages: messagesRes.data?.data?.length || 0,
+          logs: logsRes.data?.data?.length || 0
+        });
+      } catch (err) {
+        setError("Core telemetry sync failure.");
+      } finally {
+        setLoading(false);
       }
+    };
+    fetchTelemetry();
+  }, [isMaster]);
+
+  /**
+   * @section CHART_REFINEMENT
+   * Optimized to show strictly 4 core metrics filtered by active clearance level.
+   */
+  const chartData = [
+    { name: 'Missions', count: stats.events, fill: '#3b82f6', perm: 'canManageEvents' },
+    { name: 'Enrollments', count: stats.events, fill: '#FFD700', perm: 'canViewRegistrations' },
+    { name: 'Inbox', count: stats.messages, fill: '#10b981', isMasterOnly: true },
+    { name: 'Members', count: stats.memberships, fill: '#a855f7', isMasterOnly: true },
+  ].filter(item => item.isMasterOnly ? isMaster : hasPermission(item.perm));
+
+  const CustomTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-[#020617] border border-slate-800 p-3 rounded-xl shadow-2xl">
+          <p className="text-[10px] font-black uppercase text-white">{`${payload[0].payload.name}`}</p>
+          <p className="text-[14px] font-black text-[#FFD700]">{`${payload[0].value}`}</p>
+        </div>
+      );
     }
-    
-    // Pass errors (including 403s) back to components for local handling
-    return Promise.reject(error);
-  }
-);
+    return null;
+  };
 
-// ==========================================
-// 1. ADMINISTRATIVE & AUTH
-// ==========================================
-export const adminLogin = (formData) => PUBLIC_API.post("/admin/login", formData);
-export const getAdminProfile = () => API.get("/admin/profile");
-export const updatePassword = (passwords) => API.put("/admin/change-password", passwords);
-export const getActivityLogs = () => API.get("/admin/logs");
+  return (
+    <div className="min-h-screen bg-[#020617] text-white overflow-x-hidden relative flex flex-col selection:bg-blue-500/30">
+      <div className="fixed inset-0 z-0 w-full h-full bg-[linear-gradient(to_right,#FFD70008_1px,transparent_1px),linear-gradient(to_bottom,#FFD70008_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_80%_80%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
+      
+      <div className="relative z-10 w-full max-w-7xl mx-auto px-6 pt-32 pb-20 flex-grow">
+        
+        {/* HEADER TERMINAL */}
+        <div className="flex flex-col md:flex-row items-center justify-between mb-12 gap-6">
+          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
+            <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none italic">Command <span className="text-[#FFD700]">Center</span></h1>
+            <p className="text-slate-600 mt-3 text-[10px] font-black uppercase tracking-[0.4em]">Operator: {user?.fullName || user?.name || "UNIDENTIFIED"} // Access: {isMaster ? "LEVEL_0" : "BOARD_MEMBER"}</p>
+          </motion.div>
+          
+          <div className="flex items-center gap-3">
+            <a href="/" target="_blank" className="px-6 py-2.5 rounded-xl bg-blue-600/10 border border-blue-500/30 text-blue-400 text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all">
+              Live Terminal
+            </a>
+            
+            <Link to="/admin/profile" className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-400 hover:text-[#FFD700] transition-all">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              </svg>
+            </Link>
+            <button onClick={() => { logout(); navigate("/admin"); }} className="px-6 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-[10px] font-black uppercase hover:bg-red-600 transition-all">Logout</button>
+          </div>
+        </div>
 
-// ==========================================
-// 2. MISSIONS (EVENTS)
-// ==========================================
-export const fetchEvents = () => PUBLIC_API.get("/events");
-export const fetchAdminEvents = () => API.get("/events/admin/all");
-export const createEvent = (data) => API.post("/events", data);
-export const updateEvent = (id, data) => API.put(`/events/${id}`, data);
-export const deleteEvent = (id) => API.delete(`/events/${id}`);
-export const toggleArchiveEvent = (id) => API.patch(`/events/archive/${id}`);
+        {loading ? (
+          <div className="text-center py-20 flex flex-col items-center gap-4">
+            <div className="w-10 h-10 border-4 border-t-[#FFD700] border-slate-900 rounded-full animate-spin"></div>
+            <p className="text-slate-800 font-black uppercase text-[9px]">Decrypting Core Telemetry...</p>
+          </div>
+        ) : (
+          <div className="grid gap-8 grid-cols-1 lg:grid-cols-4">
+            <div className="lg:col-span-3 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {[
+                { title: "Missions", count: stats.events, link: "/admin/events", icon: "📅", perm: "canManageEvents" },
+                { title: "Broadcasts", count: stats.announcements, link: "/admin/announcements", icon: "📢", perm: "canManageAnnouncements" },
+                { title: "Enrollments", count: "LIST", link: "/all-registrations", icon: "📝", perm: "canViewRegistrations" },
+                { title: "Staff Node", count: stats.team, link: "/admin/team", icon: "🎖️", perm: "canManageTeams" },
+                { title: "Inquiry Node", count: stats.messages, link: "/admin/messages", icon: "📩", isMasterOnly: true },
+                { title: "Authority Mgr", count: stats.memberships, link: "/admin/memberships", icon: "👥", isMasterOnly: true },
+                { title: "Forensic Logs", count: stats.logs, link: "/admin/logs", icon: "📜", isMasterOnly: true },
+              ]
+                .filter(item => item.isMasterOnly ? isMaster : hasPermission(item.perm))
+                .map((item, index) => (
+                  <Link to={item.link} key={index} className="block group">
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="h-full relative overflow-hidden rounded-[2.5rem] bg-slate-900/40 border border-slate-800 hover:border-[#FFD700]/40 p-8 transition-all duration-500">
+                      <div className="flex justify-between items-start h-full">
+                        <div className="flex flex-col h-full justify-between">
+                          <div className="text-5xl mb-8 grayscale group-hover:grayscale-0 transition-all">{item.icon}</div>
+                          <h2 className="text-lg font-black text-white group-hover:text-[#FFD700] uppercase">{item.title}</h2>
+                        </div>
+                        <div className="text-right">
+                          <span className="block text-4xl font-black text-white italic group-hover:text-blue-400 transition-colors">{item.count}</span>
+                        </div>
+                      </div>
+                    </motion.div>
+                  </Link>
+                ))}
+            </div>
 
-// ==========================================
-// 3. BROADCASTS (ANNOUNCEMENTS)
-// ==========================================
-export const fetchAnnouncements = () => PUBLIC_API.get("/announcements");
-export const fetchAdminAnnouncements = () => API.get("/announcements/admin/all");
-export const createAnnouncement = (data) => API.post("/announcements", data);
-export const updateAnnouncement = (id, data) => API.put(`/announcements/${id}`, data);
-export const toggleArchiveAnnouncement = (id) => API.patch(`/announcements/archive/${id}`);
-export const deleteAnnouncement = (id) => API.delete(`/announcements/${id}`);
-
-// ==========================================
-// 4. PERSONNEL & AUTHORITY (MEMBERSHIPS)
-// ==========================================
-export const submitMembership = (data) => PUBLIC_API.post("/memberships", data);
-export const setupBoardPassword = (data) => PUBLIC_API.post("/admin/setup-password", data);
-export const fetchAllMemberships = () => API.get("/memberships/admin/all");
-export const syncPermissions = (id, data) => API.patch(`/admin/permissions/${id}`, data);
-export const deleteMembership = (id) => API.delete(`/memberships/${id}`);
-
-// ==========================================
-// 5. ENROLLMENTS (REGISTRATIONS)
-// ==========================================
-export const registerForEvent = (data) => PUBLIC_API.post("/register", data);
-export const fetchAllRegistrations = () => API.get("/register/all");
-export const deleteRegistration = (id) => API.delete(`/register/${id}`);
-export const exportRegistrations = () => API.get("/register/export", { responseType: 'blob' });
-
-// ==========================================
-// 6. TEAM MANAGEMENT
-// ==========================================
-export const fetchPublicTeam = () => PUBLIC_API.get("/team");
-export const fetchAdminTeam = () => API.get("/team/admin/all");
-export const addTeamMember = (data) => API.post("/team", data);
-export const updateTeamMember = (id, data) => API.put(`/team/${id}`, data);
-export const toggleTeamStatus = (id) => API.patch(`/team/status/${id}`);
-
-// ==========================================
-// 7. COMMUNICATIONS (INQUIRIES)
-// ==========================================
-export const submitInquiry = (data) => PUBLIC_API.post("/admin/messages/public", data);
-export const fetchInquiries = () => API.get("/admin/messages");
-export const markInquiryRead = (id) => API.patch(`/admin/messages/${id}`);
-export const deleteMessage = (id) => API.delete(`/admin/messages/${id}`);
-
-export default API;
+            <div className="lg:col-span-1 bg-slate-950/60 backdrop-blur-3xl border border-slate-800 rounded-[2.5rem] p-8 h-full flex flex-col">
+              <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em] mb-8 italic">Node Distribution</h3>
+              <div className="flex-grow w-full" style={{ minHeight: '300px' }}>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                    <XAxis 
+                        dataKey="name" 
+                        stroke="#475569" 
+                        fontSize={8} 
+                        tickLine={false} 
+                        axisLine={false} 
+                        interval={0}
+                    />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                    <Bar dataKey="count" radius={[6, 6, 0, 0]} barSize={30}>
+                        {chartData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-4 pt-4 border-t border-slate-800 text-center">
+                  <p className="text-[9px] text-slate-700 font-black uppercase tracking-[0.2em] italic">Telemetry: ACTIVE</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
