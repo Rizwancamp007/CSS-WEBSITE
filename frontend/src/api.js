@@ -23,7 +23,8 @@ const API = axios.create({
 // Request Interceptor: Binds JWT to the header
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
-  if (token && token !== "null") {
+  // Clean 'null' strings sometimes left by failed sessions
+  if (token && token !== "null" && token !== "undefined") {
     config.headers.Authorization = `Bearer ${token.trim()}`;
   }
   return config;
@@ -38,15 +39,28 @@ API.interceptors.response.use(
     const status = error.response ? error.response.status : null;
     const currentPath = window.location.pathname;
 
-    // SECURITY BYPASS: Do not redirect if we are in a "Safe Zone" (Activation or Login)
+    /**
+     * @section SECURITY BYPASS
+     * Do not trigger a session wipe if the user is currently on the 
+     * Login or Activation pages. This prevents the "2-second logout loop."
+     */
     const isSafeZone = currentPath === "/setup-board-password" || currentPath === "/admin";
 
     if ((status === 401 || status === 403) && !isSafeZone) {
+      console.warn("AUTH_INTERCEPTOR: Session invalid. Purging local nodes.");
+      
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       
-      // Redirect to login only if we were trying to access a protected admin route
-      if (currentPath.startsWith('/admin') || currentPath === "/all-registrations") {
+      /**
+       * @section ROUTE SHIELD
+       * Only redirect to login if we are trying to access a protected sector.
+       */
+      const isProtectedRoute = currentPath.startsWith('/admin') || 
+                               currentPath === "/all-registrations" || 
+                               currentPath === "/admin-dashboard";
+
+      if (isProtectedRoute) {
         window.location.href = "/admin"; 
       }
     }
@@ -86,10 +100,9 @@ export const deleteAnnouncement = (id) => API.delete(`/announcements/${id}`);
 // 4. PERSONNEL & AUTHORITY (MEMBERSHIPS)
 // ==========================================
 export const submitMembership = (data) => PUBLIC_API.post("/memberships", data);
-// ACTIVATION HANDSHAKE: Uses PUBLIC_API to avoid session-wipe loops
-export const setupBoardPassword = (data) => PUBLIC_API.post("/memberships/activate-board", data);
+export const setupBoardPassword = (data) => PUBLIC_API.post("/admin/setup-password", data);
 export const fetchAllMemberships = () => API.get("/memberships/admin/all");
-export const syncPermissions = (id, data) => API.patch(`/memberships/permissions/${id}`, data); 
+export const syncPermissions = (id, data) => API.patch(`/admin/permissions/${id}`, data); 
 export const deleteMembership = (id) => API.delete(`/memberships/${id}`);
 
 // ==========================================

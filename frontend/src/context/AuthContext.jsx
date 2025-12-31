@@ -9,10 +9,17 @@ const AuthContext = createContext();
  */
 export const AuthProvider = ({ children }) => {
   // PERSISTENCE FIX: Initialize user from localStorage to prevent "null" flicker on refresh
+  // This ensures ProtectedRoute sees the user immediately before the API call finishes.
   const [user, setUser] = useState(() => {
     const savedUser = localStorage.getItem("user");
-    return savedUser ? JSON.parse(savedUser) : null;
+    try {
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch (err) {
+      console.error("AUTH_INIT_ERROR: Corrupt session data.");
+      return null;
+    }
   });
+  
   const [loading, setLoading] = useState(true);
 
   /**
@@ -32,6 +39,7 @@ export const AuthProvider = ({ children }) => {
     const verifySession = async () => {
       const token = localStorage.getItem("token");
       
+      // LIVE FIX: Handling malformed or 'null' string tokens
       if (!token || token === "null" || token === "undefined") {
         setLoading(false);
         return;
@@ -39,24 +47,30 @@ export const AuthProvider = ({ children }) => {
 
       try {
         const res = await getAdminProfile();
-        // SYNCED: Accessing res.data.data to match backend return structure
+        
+        // SYNCED: Accessing res.data.data to match normalized backend structure
         if (res.data && res.data.success && res.data.data) {
           const freshUser = res.data.data;
           setUser(freshUser);
-          // Update local storage with fresh data (permissions/names)
+          
+          // Update local storage with fresh data (synced permissions/names)
           localStorage.setItem("user", JSON.stringify(freshUser));
         } else {
+          // If response is successful but data is missing/invalid, clear session
           logout();
         }
       } catch (err) {
-        // Only logout if the error is 401/403 (Token Invalid)
-        // Prevents logging out on 500 errors or network drops
+        // RESILIENCY: Only logout if the error is 401/403 (Token Invalid/Expired)
+        // This prevents logging out on 500 errors or temporary network drops.
         if (err.response && (err.response.status === 401 || err.response.status === 403)) {
-          console.error("AUTH_VERIFY_FAILURE: Session invalid.");
+          console.error("AUTH_VERIFY_FAILURE: Session invalid or expired.");
           logout();
+        } else {
+          console.warn("SERVER_LAG: Retaining local session state until uplink recovers.");
         }
       } finally {
-        setLoading(false);
+        // Small delay ensures state is fully painted before hiding loader
+        setTimeout(() => setLoading(false), 100);
       }
     };
 
@@ -76,41 +90,46 @@ export const AuthProvider = ({ children }) => {
       if (res.data && res.data.success) {
         const { token, user: userData } = res.data;
         
-        // PERSISTENCE FIX: Save both Token and User object
+        // PERSISTENCE: Save both Token and User object for refresh stability
         localStorage.setItem("token", token);
         localStorage.setItem("user", JSON.stringify(userData));
         
         setUser(userData); 
         return { success: true };
       }
-      return { success: false, message: res.data.message || "Handshake refused." };
+      return { 
+        success: false, 
+        message: res.data.message || "Handshake refused by authority." 
+      };
     } catch (error) {
       return { 
         success: false, 
-        message: error.response?.data?.message || "Uplink Failed." 
+        message: error.response?.data?.message || "Uplink Failed: Server Unreachable." 
       };
     }
   };
 
   /**
    * @helper Permission Guard (The Warden)
-   * Hardened to handle both 'email' and 'gmail' fields.
+   * Hardened to handle both 'email' (Admin) and 'gmail' (Board Member) fields.
    */
   const hasPermission = useCallback((permissionKey) => {
     if (!user) return false;
 
     // LEVEL 0 BYPASS (Master Admin)
     const MASTER = (import.meta.env.VITE_MASTER_ADMIN_EMAIL || "css@gmail.com").toLowerCase().trim();
-    // Handles 'email' (Admin) and 'gmail' (Board Member)
+    
+    // NORMALIZATION BRIDGE: Checks both possible email fields
     const currentEmail = (user.email || user.gmail || "").toLowerCase().trim();
     
     if (currentEmail === MASTER) return true; 
 
-    // Granular RBAC Check
+    // Granular RBAC Check: Ensure permissions object exists before check
     const permissions = user.permissions || {};
     return permissions[permissionKey] === true;
   }, [user]);
 
+  // Performance Optimization: Memoize the context value
   const authValue = useMemo(() => ({
     user,
     login,

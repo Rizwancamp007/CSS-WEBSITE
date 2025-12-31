@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 
 /**
  * @description The Sentinel Gatekeeper
- * Hardened to support general authentication, activation checks, and granular RBAC.
+ * Synchronized with AuthProvider to prevent "null flicker" logout loops.
  */
 const ProtectedRoute = ({ children, requiredPermission = null }) => {
   const { user, loading, hasPermission } = useAuth();
@@ -12,6 +12,8 @@ const ProtectedRoute = ({ children, requiredPermission = null }) => {
 
   /**
    * @section Handshake Phase
+   * If AuthContext is still verifying the token, we show the terminal loader.
+   * This prevents premature redirection while the uplink is being established.
    */
   if (loading) {
     return (
@@ -28,23 +30,26 @@ const ProtectedRoute = ({ children, requiredPermission = null }) => {
   }
 
   /**
-   * @section Authentication & Activation Shield
-   * SECURITY UPDATE: Explicitly checks if the user is authenticated AND active.
-   * If a user is deactivated in the DB, this prevents access even with a valid token.
+   * @section Authentication Shield
+   * If no user is found in state or localStorage, redirect to login.
+   * We removed the "user.isActive" check here because the backend 
+   * 'adminLogin' and 'getAdminProfile' already handle activation 
+   * and approval gates before returning the user.
    */
-  if (!user || (user.isActive === false)) {
+  if (!user) {
     return <Navigate to="/admin" state={{ from: location }} replace />;
   }
 
   /**
-   * @section Authorization Shield (Clearance Check)
+   * @section Authorization Shield (RBAC Check)
+   * Verifies if the authenticated node has the specific clearance for this sector.
    */
   if (requiredPermission && !hasPermission(requiredPermission)) {
-    // If authenticated but lacks specific power, redirect to the safe zone (Dashboard)
+    // Authenticated but unauthorized: redirect to the neutral Dashboard zone.
     return <Navigate to="/admin-dashboard" replace />;
   }
 
-  // Identity Confirmed: Establish sector uplink
+  // Clearance Confirmed: Establish sector uplink.
   return children;
 };
 

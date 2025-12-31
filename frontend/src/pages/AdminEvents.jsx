@@ -181,6 +181,7 @@ export default function AdminEvents() {
         )}
 
         {/* --- 3. UNIFIED UTILITY BAR (Search, Print, CSV) --- */}
+        {/* Positioned below managing box to ensure results are visible immediately */}
         <div className="bg-slate-900/60 backdrop-blur-md p-4 rounded-3xl border border-slate-800 shadow-2xl flex flex-col md:flex-row gap-4 no-print mb-8">
           <div className="relative flex-grow flex items-center">
             <span className="absolute left-6 text-slate-500 font-black text-[10px]">SEARCH:</span>
@@ -221,15 +222,15 @@ export default function AdminEvents() {
                       <td className="p-8 text-slate-500 font-mono italic">{new Date(event.date).toLocaleDateString('en-GB')}</td>
                       <td className="p-8 font-black uppercase text-slate-200">{event.title}</td>
                       <td className="p-8">
-                        <button onClick={() => handleArchiveToggle(event._id)} className={`no-print px-3 py-1 rounded-lg text-[8px] font-black uppercase ${event.isArchived ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'}`}>
+                        <button onClick={() => handleArchiveToggle(event._id)} className={`no-print px-3 py-1 rounded-lg text-[8px] font-black uppercase transition-all ${event.isArchived ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'}`}>
                           {event.isArchived ? 'Archived' : 'Public'}
                         </button>
                         <span className="hidden print:inline text-black font-bold text-[8px]">[{event.isArchived ? 'Archived' : 'Public'}]</span>
                       </td>
                       <td className="p-8 text-right no-print">
                         <div className="flex justify-end gap-6 font-black text-[10px] tracking-widest uppercase">
-                          <button onClick={() => handleEdit(event)} className="text-blue-500">Edit</button>
-                          <button onClick={() => handleDelete(event._id)} className="text-red-600">Purge</button>
+                          <button onClick={() => handleEdit(event)} className="text-blue-500 hover:text-white transition-all">Edit</button>
+                          <button onClick={() => handleDelete(event._id)} className="text-red-600 hover:text-white transition-all">Purge</button>
                         </div>
                       </td>
                     </tr>
@@ -242,7 +243,12 @@ export default function AdminEvents() {
                 {filteredEvents.map(event => (
                   <div key={event._id} className={`bg-slate-950/60 p-8 rounded-[2.5rem] border border-slate-800 flex flex-col ${event.isArchived ? "opacity-50 grayscale" : "shadow-2xl"}`}>
                     <div className="flex justify-between items-start mb-6 no-print">
-                        <button onClick={() => handleArchiveToggle(event._id)} className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all ${event.isArchived ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>{event.isArchived ? 'Archived' : 'Public'}</button>
+                        <button 
+                          onClick={() => handleArchiveToggle(event._id)} 
+                          className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all ${event.isArchived ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'}`}
+                        >
+                          {event.isArchived ? 'Archived' : 'Public'}
+                        </button>
                     </div>
                     <h3 className="text-2xl font-black text-white uppercase italic mb-2 print:text-black">{event.title}</h3>
                     <p className="text-[10px] text-slate-500 font-black mb-10 print:text-black">{new Date(event.date).toDateString()}</p>

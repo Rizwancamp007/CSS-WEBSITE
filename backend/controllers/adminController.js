@@ -50,12 +50,10 @@ exports.adminLogin = async (req, res) => {
     const { password } = req.body;
 
     try {
-        // Search Hierarchy: Check Primary Admins first
         let user = await Admin.findOne({ email }).select("+password");
         let isMembershipAccount = false;
 
         if (!user) {
-            // Fallback: Search Society Board Members (using gmail field)
             user = await Membership.findOne({ gmail: email }).select("+password");
             isMembershipAccount = true;
         }
@@ -67,7 +65,6 @@ exports.adminLogin = async (req, res) => {
             });
         }
 
-        // BRUTE-FORCE SHIELD
         if (user.lockUntil && user.lockUntil > Date.now()) {
             return res.status(423).json({ 
                 success: false, 
@@ -75,18 +72,11 @@ exports.adminLogin = async (req, res) => {
             });
         }
 
-        // BOARD SPECIFIC VALIDATION
         if (isMembershipAccount) {
-            if (!user.approved) {
+            if (!user.approved || !user.isActivated) {
                 return res.status(403).json({ 
                     success: false, 
-                    message: "Access Denied: Membership node not yet approved." 
-                });
-            }
-            if (!user.isActivated) {
-                return res.status(403).json({ 
-                    success: false, 
-                    message: "Access Denied: Account node not activated." 
+                    message: "Access Denied: Account node not approved or activated." 
                 });
             }
         }
@@ -96,7 +86,6 @@ exports.adminLogin = async (req, res) => {
             user.lockUntil = undefined;
             await user.save();
 
-            // RBAC ENFORCEMENT
             if (isMembershipAccount && !user.permissions?.isAdmin) {
                 return res.status(403).json({ 
                     success: false, 
@@ -118,7 +107,6 @@ exports.adminLogin = async (req, res) => {
                 token: generateToken(user._id),
             });
         } else {
-            // INCREMENT LOGIN FAILURES
             user.loginAttempts = (user.loginAttempts || 0) + 1;
             if (user.loginAttempts >= 5) {
                 user.lockUntil = Date.now() + 30 * 60 * 1000; 
@@ -141,18 +129,17 @@ exports.adminLogin = async (req, res) => {
 
 /**
  * @desc Get Current Profile
- * FIXED: Bridges the gap between DB fields and Frontend expectations.
+ * FIXED: Returns normalized data to prevent "gmail vs email" logout loops.
  */
 exports.getAdminProfile = async (req, res) => {
     try {
-        // req.user is populated by 'protect' middleware which already finds Admin or Member
         if (!req.user) return res.status(404).json({ success: false, message: "Node unreachable." });
         
         // NORMALIZATION: Ensuring keys match the Login response exactly
         const normalizedUser = {
             id: req.user._id,
             fullName: req.user.fullName || "Master Admin",
-            email: req.user.email || req.user.gmail, // Critical bridge for logout loop
+            email: req.user.email || req.user.gmail, // Critical bridge for session persistence
             permissions: req.user.permissions || { isAdmin: true }
         };
 
@@ -254,7 +241,7 @@ exports.getMessages = async (req, res) => {
 exports.markMessageRead = async (req, res) => {
     try {
         await Contact.findByIdAndUpdate(req.params.id, { isRead: true });
-        await logAdminAction(req.user.id, "INQUIRY_PROTOCOL", `Marked inquiry ${req.params.id} read.`, req);
+        await logAdminAction(req.user.id, "INQUIRY_PROTOCOL", `Marked inquiry read.`, req);
         res.json({ success: true, message: "Status updated." });
     } catch (error) {
         res.status(500).json({ success: false, message: "Update failure." });
