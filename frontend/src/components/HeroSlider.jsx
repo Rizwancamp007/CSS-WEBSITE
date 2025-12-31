@@ -15,18 +15,15 @@ import "swiper/css/effect-fade";
 const slides = [
   {
     image: "/assets/images/university-main.jpg",
-    title: "GCU Computer Science Society",
-    subtitle: "Empowering Tomorrow's Innovators"
+   
   },
   {
     image: "/assets/images/society-event.jpg",
-    title: "Join Our Events",
-    subtitle: "Collaborate, Learn, Innovate"
+  
   },
   {
     image: "/assets/images/pg-block.jpg",
-   title: "Professional Growth",
-   subtitle: "Bridging Academia and Industry"
+  
   },
 ];
 
