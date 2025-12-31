@@ -34,11 +34,17 @@ const logAdminAction = async (adminId, action, details, req) => {
 
 /**
  * @helper JWT Generator
+ * FIXED: Includes tokenVersion to support forced invalidation.
  */
-const generateToken = (id) => {
-    return jwt.sign({ id }, process.env.JWT_SECRET, { 
-        expiresIn: process.env.TOKEN_EXPIRE || "3h" 
-    });
+const generateToken = (user) => {
+    return jwt.sign(
+        { 
+            id: user._id, 
+            tokenVersion: user.tokenVersion || 0 
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: process.env.TOKEN_EXPIRE || "3h" }
+    );
 };
 
 // ==========================================
@@ -62,6 +68,16 @@ exports.adminLogin = async (req, res) => {
             return res.status(401).json({ 
                 success: false, 
                 message: "Security Alert: Identity unrecognized." 
+            });
+        }
+
+        /**
+         * ADMIN STATUS GUARD
+         */
+        if (!isMembershipAccount && user.isActive === false) {
+            return res.status(403).json({
+                success: false,
+                message: "Access Revoked: Administrative node disabled."
             });
         }
 
@@ -95,21 +111,20 @@ exports.adminLogin = async (req, res) => {
 
             await logAdminAction(user._id, "LOGIN", "Mainframe uplink established successfully.", req);
 
-            // Response for Login (Direct user object)
             res.json({
                 success: true,
                 user: {
                     id: user._id,
                     fullName: user.fullName || "Master Admin",
-                    email: user.email || user.gmail, // Normalize email/gmail bridge
+                    email: user.email || user.gmail,
                     permissions: user.permissions || { isAdmin: true }
                 },
-                token: generateToken(user._id),
+                token: generateToken(user),
             });
         } else {
             user.loginAttempts = (user.loginAttempts || 0) + 1;
             if (user.loginAttempts >= 5) {
-                user.lockUntil = Date.now() + 30 * 60 * 1000; 
+                user.lockUntil = Date.now() + 30 * 60 * 1000;
             }
             await user.save();
             res.status(401).json({ 
@@ -127,24 +142,19 @@ exports.adminLogin = async (req, res) => {
 // 2. SECURITY & PROFILE MANAGEMENT
 // ==========================================
 
-/**
- * @desc Get Current Profile
- * SYNCED: Bridges the structural gap to prevent logout loops.
- * FIXED: Wraps user data in the 'data' key to match AuthContext.jsx refresh logic.
- */
 exports.getAdminProfile = async (req, res) => {
     try {
-        if (!req.user) return res.status(404).json({ success: false, message: "Node unreachable." });
-        
-        // NORMALIZATION: Ensures key names match exactly what Login provides
+        if (!req.user) {
+            return res.status(404).json({ success: false, message: "Node unreachable." });
+        }
+
         const normalizedUser = {
-            id: req.user._id,
+            id: req.user.id,
             fullName: req.user.fullName || "Master Admin",
-            email: req.user.email || req.user.gmail, // Critical bridge for session persistence
+            email: req.user.email,
             permissions: req.user.permissions || { isAdmin: true }
         };
 
-        // FIXED: Response wrapped in 'data' key as expected by AuthContext res.data.data
         res.json({ 
             success: true, 
             data: normalizedUser 
@@ -160,13 +170,17 @@ exports.changePassword = async (req, res) => {
         const user = await Admin.findById(req.user.id).select("+password") || 
                      await Membership.findById(req.user.id).select("+password");
 
-        if (!user) return res.status(404).json({ success: false, message: "Node identification lost." });
+        if (!user) {
+            return res.status(404).json({ success: false, message: "Node identification lost." });
+        }
 
         const isMatch = await user.matchPassword(oldPassword);
-        if (!isMatch) return res.status(401).json({ success: false, message: "Current key invalid." });
+        if (!isMatch) {
+            return res.status(401).json({ success: false, message: "Current key invalid." });
+        }
 
-        user.password = newPassword; 
-        await user.save(); 
+        user.password = newPassword;
+        await user.save();
 
         await logAdminAction(user._id, "SECURITY_UPDATE", "Access credentials modified.", req);
         res.json({ success: true, message: "Security protocols updated." });
@@ -184,7 +198,9 @@ exports.updateMemberPermissions = async (req, res) => {
         const { approved, permissions, role } = req.body;
         const member = await Membership.findById(req.params.id);
 
-        if (!member) return res.status(404).json({ success: false, message: "Node not found." });
+        if (!member) {
+            return res.status(404).json({ success: false, message: "Node not found." });
+        }
 
         let clearToken = null;
         if (approved && !member.approved && !member.isActivated) {
@@ -192,7 +208,7 @@ exports.updateMemberPermissions = async (req, res) => {
         }
 
         member.approved = approved;
-        member.permissions = permissions;
+        member.permissions = { ...member.permissions, ...permissions };
         member.role = role;
 
         await member.save();
@@ -254,17 +270,21 @@ exports.setupAdminPassword = async (req, res) => {
     const { rollNo, gmail, password, token } = req.body;
     try {
         const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
         const member = await Membership.findOne({ 
-            rollNo: rollNo?.toUpperCase().trim(), 
-            gmail: gmail?.toLowerCase().trim(), 
+            rollNo: rollNo?.toUpperCase().trim(),
+            gmail: gmail?.toLowerCase().trim(),
             approved: true,
             activationToken: hashedToken,
-            isActivated: false 
+            activationExpire: { $gt: Date.now() },
+            isActivated: false
         });
 
-        if (!member) return res.status(404).json({ success: false, message: "Activation token invalid." });
+        if (!member) {
+            return res.status(404).json({ success: false, message: "Activation token invalid or expired." });
+        }
 
-        member.password = password; 
+        member.password = password;
         member.isActivated = true;
         member.activationToken = undefined;
         member.activationExpire = undefined;

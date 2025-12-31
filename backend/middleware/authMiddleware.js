@@ -21,13 +21,40 @@ const protect = async (req, res, next) => {
             // Decrypt transmission payload
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
+            if (!decoded?.id) {
+                throw new Error("Malformed Token Payload");
+            }
+
             /**
              * IDENTITY SCAN:
              * Cross-checks Admin vs Membership collections to identify the operator.
              */
             let user = await Admin.findById(decoded.id).select("-password");
             let isMembershipRecord = false;
-            
+
+            if (user) {
+                /**
+                 * TOKEN VERSION GUARD (Admin)
+                 * Invalidates old tokens after password resets.
+                 */
+                if (decoded.tokenVersion !== user.tokenVersion) {
+                    return res.status(401).json({
+                        success: false,
+                        message: "Session Invalidated: Credential rotation detected."
+                    });
+                }
+
+                /**
+                 * ADMIN STATUS GUARD
+                 */
+                if (!user.isActive) {
+                    return res.status(403).json({
+                        success: false,
+                        message: "Access Revoked: Administrative node disabled."
+                    });
+                }
+            }
+
             if (!user) {
                 user = await Membership.findById(decoded.id).select("-password");
                 isMembershipRecord = true;
@@ -57,9 +84,10 @@ const protect = async (req, res, next) => {
              * PROP-NORMALIZATION: Standardizes req.user
              */
             const userObj = user.toObject();
-            userObj.id = userObj._id.toString(); 
+            userObj.id = userObj._id.toString();
             userObj.email = (userObj.email || userObj.gmail || "").toLowerCase().trim();
-            
+            userObj.permissions = userObj.permissions || {};
+
             req.user = userObj;
             next();
         } catch (error) {
@@ -95,9 +123,7 @@ const authorize = (permissionKey) => {
          */
         const permissions = req.user?.permissions || {};
         const hasAdminAccess = permissions.isAdmin === true;
-        
-        // Safety check: ensure permissionKey exists in the user's permissions object
-        const hasSpecificPower = permissions[permissionKey] === true;
+        const hasSpecificPower = permissionKey && permissions[permissionKey] === true;
 
         if (hasAdminAccess && hasSpecificPower) {
             return next();
