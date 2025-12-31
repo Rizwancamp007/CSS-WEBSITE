@@ -2,7 +2,12 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 
+/**
+ * @description Society Membership & Executive Board Schema
+ * Manages the lifecycle from public applicant to authorized board member.
+ */
 const membershipSchema = new mongoose.Schema({
+  // --- CORE IDENTITY ---
   fullName: { type: String, required: true, trim: true },
   rollNo: { type: String, required: true, unique: true, uppercase: true, trim: true },
   department: { type: String, required: true, trim: true },
@@ -10,19 +15,31 @@ const membershipSchema = new mongoose.Schema({
   gmail: { type: String, required: true, unique: true, lowercase: true, trim: true },
   phoneNumber: { type: String, required: true, trim: true },
 
+  // --- ADMINISTRATIVE TRANSITION ---
   applyingRole: { type: String, required: true }, 
-  role: { type: String, default: "Applicant" },
+  role: { 
+    type: String, 
+    default: "Applicant" // Transitions to "Executive Board" via middleware
+  },
   approved: { type: Boolean, default: false },
-
+  
+  // --- SECURITY INFRASTRUCTURE ---
   isActivated: { type: Boolean, default: false },
   activationToken: { type: String },
-  activationExpire: { type: Date },
-  password: { type: String, select: false },
+  activationExpire: { type: Date }, // PRODUCTION ADDITION: Token expiration
+  password: { 
+    type: String,
+    select: false 
+  },
 
+  // --- BRUTE-FORCE SHIELD ---
   loginAttempts: { type: Number, default: 0 },
   lockUntil: { type: Number },
+
+  // --- SESSION VERSIONING ---
   tokenVersion: { type: Number, default: 0 },
 
+  // --- PERMISSION MATRIX (RBAC) ---
   permissions: {
     isAdmin: { type: Boolean, default: false },
     canManageEvents: { type: Boolean, default: false },
@@ -31,29 +48,45 @@ const membershipSchema = new mongoose.Schema({
     canManageTeams: { type: Boolean, default: false },
     canExportData: { type: Boolean, default: false }
   }
-}, { timestamps: true });
+}, { 
+  timestamps: true 
+});
 
-// ===== Methods =====
+/**
+ * @section Security Methods
+ */
+
+/**
+ * @description Secure Activation Logic
+ * Generates a one-time token valid for 24 hours.
+ */
 membershipSchema.methods.createActivationToken = function() {
   const token = crypto.randomBytes(32).toString("hex");
   this.activationToken = crypto.createHash("sha256").update(token).digest("hex");
-  this.activationExpire = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+  
+  // PRODUCTION ADDITION: Set expiration to 24 hours from now
+  this.activationExpire = Date.now() + 24 * 60 * 60 * 1000;
+  
   return token; 
 };
 
-membershipSchema.methods.matchPassword = async function(enteredPassword) {
+membershipSchema.methods.matchPassword = async function (enteredPassword) {
   if (!this.password) return false;
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// ===== Pre-save Middleware =====
-membershipSchema.pre("save", async function(next) {
+/**
+ * @section Middlewares
+ */
+membershipSchema.pre("save", async function (next) {
+  // 1. Password Encryption
   if (this.password && this.isModified("password")) {
     const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);
     this.tokenVersion += 1; 
   }
-
+  
+  // 2. Automated Role Transition (Hardened)
   if (this.approved && this.role === "Applicant") {
     this.role = "Executive Board";
   }
@@ -61,7 +94,6 @@ membershipSchema.pre("save", async function(next) {
   next();
 });
 
-// ===== Indexes =====
 membershipSchema.index({ rollNo: 1, gmail: 1 });
 membershipSchema.index({ approved: 1, isActivated: 1 });
 

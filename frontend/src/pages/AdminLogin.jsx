@@ -1,4 +1,4 @@
-import React, { useState } from "react"; // Removed useEffect from imports
+import React, { useState, useEffect } from "react"; 
 import { motion } from "framer-motion";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext"; 
@@ -12,11 +12,18 @@ export default function AdminLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { login } = useAuth(); // Removed 'user' to prevent the useEffect loop here
+  const { login, user } = useAuth(); 
   const navigate = useNavigate();
 
-  // IMPORTANT: We handle redirection inside handleSubmit success block 
-  // to ensure state synchronization is complete.
+  /**
+   * @section Auto-redirect if user session exists
+   * This prevents already logged-in users from seeing the login page
+   */
+  useEffect(() => {
+    if (user) {
+      navigate("/admin-dashboard", { replace: true });
+    }
+  }, [user, navigate]);
 
   /**
    * @section Authentication Sequence
@@ -49,6 +56,7 @@ export default function AdminLogin() {
       }
     } catch (error) {
       toast.error("SECURITY ALERT: Bridge Offline.", { id: authToast });
+      console.error("AdminLogin Error:", error);
     } finally {
       setIsSubmitting(false);
     }

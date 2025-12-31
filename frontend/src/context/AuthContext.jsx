@@ -4,11 +4,12 @@ import { adminLogin as loginApi, getAdminProfile } from "../api";
 const AuthContext = createContext();
 
 /**
- * @description AuthContext: Central session hub for Admins & Board Members
- * Hardened for dual-collection verification, session persistence, and RBAC.
+ * AuthProvider: Central hub for Admins & Board Members
+ * - Handles dual-collection verification (Admin / Membership)
+ * - Maintains session persistence with tokenVersion checks
+ * - Enforces RBAC & activation rules
  */
 export const AuthProvider = ({ children }) => {
-  // Initialize user from localStorage to prevent null flicker on refresh
   const [user, setUser] = useState(() => {
     const savedUser = localStorage.getItem("user");
     try {
@@ -16,12 +17,12 @@ export const AuthProvider = ({ children }) => {
         ? JSON.parse(savedUser) 
         : null;
     } catch (err) {
-      console.error("AUTH_INIT_ERROR: Corrupt session data purged.");
+      console.error("AUTH_INIT_ERROR: Corrupt session cleared.");
       localStorage.removeItem("user");
       return null;
     }
   });
-  
+
   const [loading, setLoading] = useState(true);
 
   // ---------------------------
@@ -34,12 +35,11 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   // ---------------------------
-  // Session Restoration
+  // Session Verification / Restoration
   // ---------------------------
   useEffect(() => {
     const verifySession = async () => {
       const token = localStorage.getItem("token");
-      
       if (!token || token === "null" || token === "undefined") {
         setLoading(false);
         return;
@@ -47,17 +47,25 @@ export const AuthProvider = ({ children }) => {
 
       try {
         const res = await getAdminProfile();
-        
+
         if (res.data?.success && res.data.data) {
           const freshUser = res.data.data;
-          setUser(freshUser);
+
+          // Check activation & approved flags for Membership nodes
+          if (freshUser.role !== "Admin" && (!freshUser.approved || !freshUser.isActivated)) {
+            console.warn("AUTH_VERIFY: Board member not activated or approved.");
+            logout();
+            return;
+          }
+
           localStorage.setItem("user", JSON.stringify(freshUser));
+          setUser(freshUser);
         } else {
           logout();
         }
       } catch (err) {
         if (err.response?.status === 401 || err.response?.status === 403) {
-          console.error("AUTH_VERIFY_FAILURE: Session invalid or expired.");
+          console.error("AUTH_VERIFY_FAILURE: Session invalid/expired.");
           logout();
         } else {
           console.warn("SERVER_LAG: Retaining local session until uplink recovers.");
@@ -82,21 +90,22 @@ export const AuthProvider = ({ children }) => {
 
       if (res.data?.success) {
         const { token, user: userData } = res.data;
+
+        // Ensure Membership node is approved & activated
+        if (userData.role !== "Admin" && (!userData.approved || !userData.isActivated)) {
+          return { success: false, message: "Account pending board approval or activation." };
+        }
+
         localStorage.setItem("token", token);
         localStorage.setItem("user", JSON.stringify(userData));
-        setUser(userData); 
+        setUser(userData);
+
         return { success: true };
       }
 
-      return { 
-        success: false, 
-        message: res.data?.message || "Handshake refused by authority." 
-      };
+      return { success: false, message: res.data?.message || "Handshake refused by authority." };
     } catch (error) {
-      return { 
-        success: false, 
-        message: error.response?.data?.message || "Uplink Failed: Server Unreachable." 
-      };
+      return { success: false, message: error.response?.data?.message || "Uplink Failed: Server Unreachable." };
     }
   };
 
@@ -116,7 +125,7 @@ export const AuthProvider = ({ children }) => {
   }, [user]);
 
   // ---------------------------
-  // Memoized context value
+  // Memoized Context Value
   // ---------------------------
   const authValue = useMemo(() => ({
     user,

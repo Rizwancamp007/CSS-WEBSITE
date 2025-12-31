@@ -15,7 +15,7 @@ const { protect, authorize } = require("../middleware/authMiddleware");
 
 /**
  * @helper SuperAdmin Guard (Level 0 Clearance)
- * Prevents non-master nodes from accessing forensic logs or authority settings.
+ * Ensures only the master admin node can access critical authority endpoints.
  */
 const superAdminOnly = (req, res, next) => {
     const MASTER_EMAIL = (process.env.MASTER_ADMIN_EMAIL || "css@gmail.com").toLowerCase().trim();
@@ -35,39 +35,46 @@ const superAdminOnly = (req, res, next) => {
 // 1. AUTHENTICATION & IDENTITY
 // ==========================================
 
-// Public Gateway: Handshake for Admin/Board login
+// Public Gateway: Admin/Board login
 router.post("/login", adminLogin);
 
-// Public Gateway: Board activation (Syncs with /activate on frontend)
+// Public Gateway: Initial Board password setup or reset
 router.post("/setup-password", setupAdminPassword);
 
-// Private Node: Identity retrieval
+// Private Node: Retrieve profile (requires JWT verification)
 router.get("/profile", protect, getAdminProfile);
 
-// Private Node: Credential rotation
+// Private Node: Password change endpoint for admins/board members
 router.put("/change-password", protect, changePassword);
 
 // ==========================================
 // 2. INQUIRY SYSTEM (COMMUNICATIONS)
 // ==========================================
 
-// Public Uplink: Student contact submission
+// Public Uplink: Students or public submit messages
 router.post("/messages/public", submitPublicMessage);
 
-// Restricted: SuperAdmin Inquiry Management
+// Restricted: SuperAdmin retrieves all messages (audit/log purpose)
 router.get("/messages", protect, superAdminOnly, getMessages);
 
-// Restricted: Status modification
+// Restricted: SuperAdmin marks message as read (status update)
 router.patch("/messages/:id", protect, superAdminOnly, markMessageRead);
 
 // ==========================================
 // 3. SYSTEM AUTHORITY & FORENSICS
 // ==========================================
 
-// Restricted: Master Admin only can sync permissions
+// Restricted: SuperAdmin updates member permissions
 router.patch("/permissions/:id", protect, superAdminOnly, updateMemberPermissions);
 
-// Restricted: Master Admin only can access audit trail
+// Restricted: SuperAdmin retrieves full activity logs / audit trail
 router.get("/logs", protect, superAdminOnly, getActivityLogs);
+
+// ==========================================
+// 4. OPTIONAL RBAC EXTENSIONS (if needed later)
+// Example usage with granular permission keys from authMiddleware
+// router.patch("/events/:id", protect, authorize("canManageEvents"), updateEvent);
+// router.post("/announcements", protect, authorize("canManageAnnouncements"), postAnnouncement);
+// ==========================================
 
 module.exports = router;
