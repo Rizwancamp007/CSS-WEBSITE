@@ -46,3 +46,37 @@ Accents: Gold (#FFD700) for Authority; Blue (#2563eb) for Communication.
 Glassmorphism: backdrop-blur-2xl for high-clearance UI cards.
 
 This project is developed for the Computer Science Society, GCU Lahore.
+
+## Local setup
+
+Backend:
+
+```bash
+cd backend
+npm install
+cp .env.example .env
+npm run dev
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Set `VITE_API_URL` in `frontend/.env` to the backend URL if it runs somewhere other than the default.
+
+### Environment variables
+
+Backend (`backend/.env`): `PORT`, `MONGO_URI`, `JWT_SECRET`, `FRONTEND_URL`, `MASTER_ADMIN_EMAIL`, `NODE_ENV`.
+
+Frontend (`frontend/.env`): `VITE_API_URL`.
+
+### Project structure
+
+```text
+backend/   Express API (routes, controllers, models, middleware)
+frontend/  React + Vite app (pages, components, context)
+```
