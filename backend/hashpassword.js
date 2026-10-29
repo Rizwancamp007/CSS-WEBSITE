@@ -3,6 +3,8 @@ const bcrypt = require("bcryptjs");
 /**
  * @description Manual Password Encryption Utility
  * Use this to generate hashes for manual database injection (Postman/Compass).
+ * Usage: node backend/hashpassword.js <password>
+ * The password is passed on the command line and is never committed to the repo.
  */
 const generateHash = async (plainPassword) => {
   try {
@@ -27,5 +29,11 @@ const generateHash = async (plainPassword) => {
   }
 };
 
-// Execute with your desired password
-generateHash("Khan768.");
+// Read the password from the command line instead of hardcoding it.
+const password = process.argv[2];
+if (!password) {
+  console.error("Usage: node backend/hashpassword.js <password>");
+  process.exit(1);
+}
+
+generateHash(password);
